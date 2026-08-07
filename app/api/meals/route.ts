@@ -33,6 +33,7 @@ export async function POST(req: Request) {
       loggedAt: body.loggedAt || new Date().toISOString(),
       mealType,
       warnings: body.warnings || [],
+      ingredients: body.ingredients || [],
     };
     const result = await db.collection('meals').insertOne(meal as any);
     return NextResponse.json({ ok: true, _id: result.insertedId });

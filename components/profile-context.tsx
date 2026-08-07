@@ -1,8 +1,10 @@
 'use client';
 
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
 import type { UserProfile, NutritionTargets } from '@/lib/nutrition';
 import { calculateTargets } from '@/lib/nutrition';
+
+const PROFILE_CACHE_KEY = 'healthify-profile';
 
 interface ProfileContextValue {
   profile: UserProfile | null;
@@ -14,40 +16,70 @@ interface ProfileContextValue {
 
 const ProfileContext = createContext<ProfileContextValue | undefined>(undefined);
 
+function readCachedProfile(): UserProfile | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = sessionStorage.getItem(PROFILE_CACHE_KEY);
+    return raw ? JSON.parse(raw) as UserProfile : null;
+  } catch {
+    return null;
+  }
+}
+
+function cacheProfile(p: UserProfile | null) {
+  if (typeof window === 'undefined') return;
+  if (p) sessionStorage.setItem(PROFILE_CACHE_KEY, JSON.stringify(p));
+  else sessionStorage.removeItem(PROFILE_CACHE_KEY);
+}
+
 export function ProfileProvider({ children }: { children: ReactNode }) {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [targets, setTargets] = useState<NutritionTargets | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
 
-  const refresh = async () => {
+  const applyProfile = useCallback((p: UserProfile | null) => {
+    setProfile(p);
+    setTargets(p ? calculateTargets(p) : null);
+    cacheProfile(p);
+  }, []);
+
+  const refresh = useCallback(async () => {
+    setLoading(true);
     try {
       const res = await fetch('/api/profile', { headers: { 'x-user-id': 'demo-user' } });
       const data = await res.json();
       if (data.profile) {
         const { _id, _v, userId, updatedAt, ...clean } = data.profile;
-        setProfile(clean);
-        setTargets(calculateTargets(clean));
+        const profile = { ...clean, dietType: clean.dietType || 'non_vegetarian' } as UserProfile;
+        applyProfile(profile);
       }
     } catch {
-      // no profile yet
+      // keep cached profile if network fails
     } finally {
       setLoading(false);
     }
-  };
+  }, [applyProfile]);
 
   const saveProfile = async (p: UserProfile) => {
-    await fetch('/api/profile', {
+    const res = await fetch('/api/profile', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-user-id': 'demo-user' },
       body: JSON.stringify(p),
     });
-    setProfile(p);
-    setTargets(calculateTargets(p));
+    if (!res.ok) {
+      const data = await res.json();
+      throw new Error(data.error || 'Failed to save profile');
+    }
+    applyProfile(p);
   };
 
   useEffect(() => {
+    const cached = readCachedProfile();
+    if (cached) {
+      applyProfile(cached);
+    }
     refresh();
-  }, []);
+  }, [applyProfile, refresh]);
 
   return (
     <ProfileContext.Provider value={{ profile, targets, loading, refresh, saveProfile }}>

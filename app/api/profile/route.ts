@@ -7,7 +7,9 @@ export async function GET(req: Request) {
     const userId = req.headers.get('x-user-id') || 'demo-user';
     const db = await getDb();
     const profile = await db.collection('profiles').findOne({ userId });
-    return NextResponse.json({ profile });
+    return NextResponse.json({ profile }, {
+      headers: { 'Cache-Control': 'private, max-age=30' },
+    });
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Unknown error';
     return NextResponse.json({ error: `Failed to load profile: ${msg}` }, { status: 500 });

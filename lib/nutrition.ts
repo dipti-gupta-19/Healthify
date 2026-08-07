@@ -2,6 +2,7 @@ export type Sex = 'male' | 'female';
 export type ActivityLevel = 'sedentary' | 'light' | 'moderate' | 'active' | 'very_active';
 export type Goal = 'loss' | 'maintain' | 'gain';
 export type MedicalCondition = 'none' | 'diabetes' | 'hypertension' | 'cholesterol' | 'pcos';
+export type DietType = 'vegetarian' | 'non_vegetarian';
 
 export interface UserProfile {
   name: string;
@@ -11,6 +12,7 @@ export interface UserProfile {
   heightCm: number;
   activityLevel: ActivityLevel;
   goal: Goal;
+  dietType: DietType;
   medicalConditions: MedicalCondition[];
   allergies: string[];
 }
@@ -67,6 +69,9 @@ export function calculateTargets(profile: UserProfile): NutritionTargets {
     if (cond === 'cholesterol') {
       sugarMax = Math.min(sugarMax, 30);
     }
+    if (cond === 'pcos') {
+      sugarMax = Math.min(sugarMax, 20);
+    }
   }
 
   return { calories, protein, carbs, fat, fiber, sugarMax, sodiumMax };
@@ -94,6 +99,22 @@ export interface FoodAnalysis {
   harmfulAdditives: string[];
   ingredients?: string[];
   recommendation?: string;
+  isJunkFood?: boolean;
+  junkFoodLabel?: string;
+  healthConcerns?: string[];
+  whyLimit?: string[];
+  portionAdvice?: string;
+  servingLabel?: string;
+  dietAlerts?: DietAlert[];
+  quickSummary?: string;
+  highlightTags?: string[];
+}
+
+export interface DietAlert {
+  type: 'egg' | 'meat' | 'fish';
+  label: string;
+  emoji: string;
+  message: string;
 }
 
 const HARMFUL_ADDITIVES: Record<string, string> = {
@@ -111,6 +132,32 @@ const HARMFUL_ADDITIVES: Record<string, string> = {
   'sodium benzoate': 'Preservative — may form benzene with vitamin C',
   'potassium bromate': 'Flour improver banned in many countries',
 };
+
+const PROCESSED_INGREDIENTS: Record<string, string> = {
+  'palm oil': 'High in saturated fat — raises heart disease risk when eaten regularly',
+  'vegetable oil': 'Refined oil in snacks adds empty calories with little nutrition',
+  'sunflower oil': 'Often used in fried snacks — high calorie, low nutrients',
+  'maltodextrin': 'Processed starch that spikes blood sugar faster than sugar',
+  'dextrose': 'Pure sugar additive — adds calories without nutrition',
+  'corn syrup': 'Liquid sugar linked to weight gain and insulin spikes',
+  'artificial flavor': 'Chemical flavoring with no nutritional value',
+  'artificial colour': 'Synthetic dyes linked to hyperactivity in children',
+  'artificial color': 'Synthetic dyes linked to hyperactivity in children',
+  'monosodium glutamate': 'MSG may cause headaches or sensitivity in some people',
+  'hydrogenated': 'Contains hydrogenated fats — bad for heart health',
+  'dehydrated potato': 'Highly processed potato base — low fiber, high carbs',
+  'corn flour': 'Refined starch in snacks — quick blood sugar spike',
+  'potato starch': 'Processed starch with minimal fiber or protein',
+  'emulsifier': 'Processed additive — indicates highly manufactured food',
+  'flavor enhancer': 'Chemical additive to boost taste — often MSG-based',
+};
+
+const JUNK_FOOD_KEYWORDS = [
+  'chip', 'crisp', 'candy', 'chocolate', 'soda', 'cola', 'pepsi', 'instant noodle',
+  'cookie', 'biscuit', 'wafer', 'nacho', 'popcorn', 'fry', 'snack', 'lays',
+  'kurkure', 'cheetos', 'doritos', 'pringles', 'maggie', 'ramen', 'burger',
+  'pizza', 'donut', 'cake', 'ice cream', 'soft drink', 'energy drink',
+];
 
 export function checkHarmfulAdditives(ingredients: string[]): string[] {
   const found: string[] = [];
@@ -133,6 +180,215 @@ export function checkAllergens(ingredients: string[], allergies: string[]): stri
     }
   }
   return found;
+}
+
+const EGG_MARKERS = ['egg', 'eggs', 'albumin', 'ovalbumin', 'mayonnaise', 'mayo'];
+const MEAT_MARKERS = ['chicken', 'beef', 'pork', 'mutton', 'lamb', 'meat', 'bacon', 'ham', 'lard', 'gelatin', 'sausage', 'pepperoni', 'turkey', 'duck'];
+const FISH_MARKERS = ['fish', 'shrimp', 'prawn', 'crab', 'seafood', 'anchovy', 'tuna', 'salmon', 'shellfish', 'oyster', 'squid'];
+
+export function checkDietAlerts(
+  name: string,
+  ingredients: string[],
+  profile: UserProfile,
+): DietAlert[] {
+  if (profile.dietType !== 'vegetarian') return [];
+
+  const text = `${name} ${ingredients.join(' ')}`.toLowerCase();
+  const alerts: DietAlert[] = [];
+
+  if (EGG_MARKERS.some((m) => text.includes(m))) {
+    alerts.push({
+      type: 'egg',
+      label: 'Contains EGG',
+      emoji: '🥚',
+      message: 'This food contains egg. Are you okay eating it?',
+    });
+  }
+  if (MEAT_MARKERS.some((m) => text.includes(m))) {
+    alerts.push({
+      type: 'meat',
+      label: 'Contains MEAT',
+      emoji: '🍖',
+      message: 'This is NOT vegetarian — it contains meat.',
+    });
+  }
+  if (FISH_MARKERS.some((m) => text.includes(m))) {
+    alerts.push({
+      type: 'fish',
+      label: 'Contains FISH',
+      emoji: '🐟',
+      message: 'This is NOT vegetarian — it contains fish or seafood.',
+    });
+  }
+  return alerts;
+}
+
+function buildHighlightTags(analysis: Partial<FoodAnalysis>): string[] {
+  const tags: string[] = [];
+  if (analysis.isJunkFood) tags.push('🍟 Junk food');
+  if (analysis.dietAlerts?.length) tags.push('⚠️ Not veg-friendly');
+  if (analysis.allergens?.length) tags.push('🚫 Allergen');
+  if (analysis.harmfulAdditives?.length || (analysis.healthConcerns?.length ?? 0) > 0) tags.push('⚗️ Additives');
+  if (analysis.facts && analysis.facts.fat >= 20) tags.push('🔴 High fat');
+  if (analysis.facts && analysis.facts.calories >= 400) tags.push('🔥 High calorie');
+  return tags.slice(0, 4);
+}
+
+function buildQuickSummary(analysis: FoodAnalysis, profile: UserProfile): string {
+  if (analysis.dietAlerts?.length) {
+    return analysis.dietAlerts.map((a) => a.message).join(' ');
+  }
+  if (analysis.verdict === 'great' || analysis.verdict === 'good') {
+    return 'Looks good for your plan — enjoy in a sensible portion.';
+  }
+  if (analysis.isJunkFood) {
+    return analysis.portionAdvice?.split('—')[0] || 'Processed snack — keep it occasional.';
+  }
+  if (analysis.verdict === 'poor') {
+    return 'Best to skip or eat a very small portion today.';
+  }
+  return 'Okay in moderation — balance with lighter meals later.';
+}
+
+function applyPresentationLayer(
+  analysis: FoodAnalysis,
+  profile: UserProfile,
+): FoodAnalysis {
+  analysis.dietAlerts = checkDietAlerts(analysis.name, analysis.ingredients || [], profile);
+  if (analysis.dietAlerts.length > 0) {
+    analysis.verdict = 'poor';
+    analysis.warnings = [
+      ...analysis.dietAlerts.map((a) => a.message),
+      ...analysis.warnings.filter((w) => !analysis.dietAlerts!.some((d) => w.includes(d.label))),
+    ];
+  }
+  if (analysis.whyLimit && analysis.whyLimit.length > 2) {
+    analysis.whyLimit = analysis.whyLimit.slice(0, 2);
+  }
+  if (analysis.healthConcerns && analysis.healthConcerns.length > 3) {
+    analysis.healthConcerns = analysis.healthConcerns.slice(0, 3);
+  }
+  analysis.highlightTags = buildHighlightTags(analysis);
+  analysis.quickSummary = buildQuickSummary(analysis, profile);
+  return analysis;
+}
+
+export function checkProcessedIngredients(ingredients: string[]): string[] {
+  const found: string[] = [];
+  const lower = ingredients.map((i) => i.toLowerCase());
+  for (const [key, label] of Object.entries(PROCESSED_INGREDIENTS)) {
+    if (lower.some((i) => i.includes(key))) {
+      found.push(label);
+    }
+  }
+  return found;
+}
+
+function detectJunkFood(
+  name: string,
+  ingredients: string[],
+  facts: NutritionFacts,
+  categories?: string,
+): boolean {
+  const text = `${name} ${categories || ''} ${ingredients.join(' ')}`.toLowerCase();
+  const byKeyword = JUNK_FOOD_KEYWORDS.some((k) => text.includes(k));
+  const byNutrition = facts.calories >= 350 && facts.fat >= 20;
+  const byProcessing = ingredients.length >= 3 && facts.fiber < 5 && facts.protein < 10;
+  return byKeyword || byNutrition || byProcessing;
+}
+
+function getPortionAdvice(
+  facts: NutritionFacts,
+  targets: NutritionTargets,
+  isJunk: boolean,
+  servingLabel?: string,
+): string {
+  if (facts.calories <= 0) return '';
+  const serving = servingLabel || 'per pack/serving';
+  const snackBudget = targets.calories * (isJunk ? 0.12 : 0.2);
+  let maxPacks = Math.floor(snackBudget / facts.calories);
+  if (isJunk) maxPacks = Math.min(maxPacks, 2);
+  maxPacks = Math.max(1, maxPacks);
+
+  if (isJunk && facts.calories >= 400) {
+    return `Limit to 1 serving (${facts.calories} kcal ${serving}) — high-calorie junk snack. Two packs = ${facts.calories * 2} kcal (${Math.round((facts.calories * 2 / targets.calories) * 100)}% of daily budget).`;
+  }
+  if (isJunk && maxPacks === 1) {
+    return `Stick to 1 pack (${facts.calories} kcal ${serving}) per day — more adds excess fat with little nutrition.`;
+  }
+  if (isJunk) {
+    return `Up to ${maxPacks} packs (${facts.calories * maxPacks} kcal ${serving}) — don't exceed to stay on track.`;
+  }
+  return `${facts.calories} kcal ${serving} — uses ${Math.round((facts.calories / targets.calories) * 100)}% of your daily calories.`;
+}
+
+export function analyzePackagedFood(
+  name: string,
+  facts: NutritionFacts,
+  profile: UserProfile,
+  ingredients: string[] = [],
+  options?: { categories?: string; servingLabel?: string },
+): FoodAnalysis {
+  const base = analyzeFood(name, facts, profile, ingredients);
+  const processedConcerns = checkProcessedIngredients(ingredients);
+  const isJunk = detectJunkFood(name, ingredients, facts, options?.categories);
+  const healthConcerns: string[] = [...base.harmfulAdditives, ...processedConcerns];
+  const whyLimit: string[] = [];
+  const warnings = [...base.warnings];
+  const targets = calculateTargets(profile);
+
+  if (isJunk) {
+    base.junkFoodLabel = 'Processed / Junk Food';
+    base.isJunkFood = true;
+    whyLimit.push('High calories but low protein, fiber, and nutrients — "empty calories".');
+    if (facts.fat >= 20) {
+      whyLimit.push(`${facts.fat}g fat per serving — frying/oils increase heart disease risk over time.`);
+      warnings.push(`High fat (${facts.fat}g per serving) — typical of fried/processed snacks`);
+    }
+    if (facts.sodium >= 300) {
+      whyLimit.push(`${facts.sodium}mg sodium — excess salt strains kidneys and raises blood pressure.`);
+    } else if (facts.sodium === 0) {
+      whyLimit.push('Packaged snacks are usually high in salt — check the label for sodium.');
+    }
+    if (facts.calories >= 400) {
+      whyLimit.push(`${facts.calories} kcal per serving — multiple packs quickly exceed your daily budget.`);
+      warnings.push(`Very high calories (${facts.calories} kcal per serving) — limit portions`);
+    }
+    if (facts.sugar >= 10) {
+      whyLimit.push(`${facts.sugar}g sugar — spikes blood sugar and promotes weight gain.`);
+    }
+    if (processedConcerns.length > 0) {
+      whyLimit.push('Contains processed oils, starches, or additives — not whole food.');
+    }
+    if (ingredients.length >= 5) {
+      whyLimit.push(`${ingredients.length}+ ingredients — long lists mean highly processed food.`);
+    }
+    base.verdict = facts.calories >= 450 || facts.fat >= 25 ? 'poor' : 'moderate';
+    if (base.allergens.length > 0 || base.harmfulAdditives.length > 0) {
+      base.verdict = 'poor';
+    }
+    base.emoji = '🍟';
+    base.recommendation = 'Occasional treat only — choose fruit, nuts, or homemade snacks on most days.';
+  }
+
+  if (facts.fat >= 15 && !isJunk) {
+    healthConcerns.push('Moderate fat — balance with lighter meals today.');
+  }
+  if (facts.sodium >= 400) {
+    healthConcerns.push(`High sodium (${facts.sodium}mg) — limit if you have hypertension.`);
+  }
+
+  base.healthConcerns = healthConcerns;
+  base.whyLimit = whyLimit;
+  base.portionAdvice = getPortionAdvice(facts, targets, isJunk, options?.servingLabel);
+  base.servingLabel = options?.servingLabel;
+  base.warnings = warnings;
+
+  if (base.portionAdvice && isJunk) {
+    base.recommendation = `${base.portionAdvice} ${base.recommendation || ''}`.trim();
+  }
+
+  return applyPresentationLayer(base, profile);
 }
 
 export function analyzeFood(
@@ -162,6 +418,12 @@ export function analyzeFood(
     if (cond === 'cholesterol' && facts.fat > 15) {
       warnings.push(`High fat (${facts.fat}g) — watch for cholesterol`);
     }
+    if (cond === 'pcos' && facts.sugar > 8) {
+      warnings.push(`High sugar (${facts.sugar}g) — risky for PCOS`);
+    }
+    if (cond === 'pcos' && facts.carbs > 40) {
+      warnings.push(`High carbs (${facts.carbs}g) — may affect insulin with PCOS`);
+    }
   }
 
   let score = 0;
@@ -188,7 +450,7 @@ export function analyzeFood(
     recommendation = 'Great choice — fits well into your daily plan.';
   }
 
-  return {
+  return applyPresentationLayer({
     name,
     emoji: '🍽️',
     facts,
@@ -198,7 +460,7 @@ export function analyzeFood(
     harmfulAdditives,
     ingredients,
     recommendation,
-  };
+  }, profile);
 }
 
 export interface LoggedMeal {
@@ -211,6 +473,29 @@ export interface LoggedMeal {
   loggedAt: string;
   mealType: 'breakfast' | 'lunch' | 'dinner' | 'snack';
   warnings: string[];
+  ingredients?: string[];
+  feedback?: MealFeedback;
+}
+
+export type FeedbackSymptom =
+  | 'none'
+  | 'nausea'
+  | 'vomiting'
+  | 'rash'
+  | 'itching'
+  | 'stomach_pain'
+  | 'diarrhea'
+  | 'headache'
+  | 'bloating'
+  | 'breathing_difficulty';
+
+export interface MealFeedback {
+  symptoms: FeedbackSymptom[];
+  severity: 'none' | 'mild' | 'moderate' | 'severe';
+  notes?: string;
+  submittedAt: string;
+  suspectedAllergy?: boolean;
+  suspectedFoodPoisoning?: boolean;
 }
 
 export interface DailySummary {
@@ -273,4 +558,86 @@ export function getMealType(hour: number): 'breakfast' | 'lunch' | 'dinner' | 's
   if (hour >= 11 && hour < 15) return 'lunch';
   if (hour >= 15 && hour < 18) return 'snack';
   return 'dinner';
+}
+
+const SYMPTOM_ALLERGY_MAP: Record<FeedbackSymptom, boolean> = {
+  none: false,
+  nausea: false,
+  vomiting: true,
+  rash: true,
+  itching: true,
+  stomach_pain: false,
+  diarrhea: true,
+  headache: false,
+  bloating: false,
+  breathing_difficulty: true,
+};
+
+export function analyzeFeedbackSymptoms(symptoms: FeedbackSymptom[]): {
+  suspectedAllergy: boolean;
+  suspectedFoodPoisoning: boolean;
+  message: string;
+} {
+  if (!symptoms.length || symptoms.every((s) => s === 'none')) {
+    return { suspectedAllergy: false, suspectedFoodPoisoning: false, message: 'No issues reported.' };
+  }
+  const allergySymptoms = symptoms.filter((s) => SYMPTOM_ALLERGY_MAP[s]);
+  const poisoningSymptoms = symptoms.filter((s) =>
+    ['vomiting', 'diarrhea', 'stomach_pain', 'nausea'].includes(s),
+  );
+  const suspectedAllergy = allergySymptoms.length >= 1 && symptoms.includes('rash') || symptoms.includes('itching') || symptoms.includes('breathing_difficulty');
+  const suspectedFoodPoisoning = poisoningSymptoms.length >= 2 || (symptoms.includes('vomiting') && symptoms.includes('diarrhea'));
+
+  let message = '';
+  if (suspectedAllergy) message = 'Possible allergic reaction — avoid this food and similar ingredients.';
+  else if (suspectedFoodPoisoning) message = 'Possible food poisoning symptoms — drink water and seek medical help if severe.';
+  else if (symptoms.length > 0) message = 'Mild discomfort noted — monitor and log again if it persists.';
+
+  return { suspectedAllergy, suspectedFoodPoisoning, message };
+}
+
+export function getDailyRecommendations(
+  consumed: NutritionFacts,
+  targets: NutritionTargets,
+  profile: UserProfile,
+  hour: number = new Date().getHours(),
+): string[] {
+  const recs: string[] = [];
+  const remCal = targets.calories - consumed.calories;
+  const remProtein = targets.protein - consumed.protein;
+  const remFiber = targets.fiber - consumed.fiber;
+
+  if (remProtein > 15) {
+    const isVeg = profile.dietType === 'vegetarian';
+    if (isVeg) {
+      recs.push(`Need ${Math.round(remProtein)}g protein — try dal, paneer, or chole.`);
+    } else {
+      recs.push(`Need ${Math.round(remProtein)}g protein — try dal, paneer, or grilled chicken.`);
+    }
+  }
+  if (remFiber > 5) {
+    recs.push(`Need ${Math.round(remFiber)}g more fiber — add salad, chole, or rajma to your next meal.`);
+  }
+  if (remCal > 400 && hour < 20) {
+    if (profile.dietType === 'vegetarian') {
+      recs.push(`${Math.round(remCal)} kcal left — a veg thali or dal-rice fits your budget.`);
+    } else {
+      recs.push(`${Math.round(remCal)} kcal left — a thali or biryani fits your remaining budget.`);
+    }
+  } else if (remCal < -200) {
+    recs.push(`You're ${Math.abs(Math.round(remCal))} kcal over — choose a light salad or soup for your next meal.`);
+  }
+  if (profile.medicalConditions.includes('diabetes') && consumed.sugar > targets.sugarMax * 0.6) {
+    recs.push('Sugar budget running high — prefer idli, dal, or vegetable curry for dinner.');
+  }
+  if (profile.medicalConditions.includes('hypertension') && consumed.sodium > targets.sodiumMax * 0.7) {
+    recs.push('Sodium is high today — avoid packaged snacks and salty curries.');
+  }
+  if (hour >= 11 && hour < 15 && consumed.calories < targets.calories * 0.25) {
+    recs.push('Lunch window — log a meal now to avoid long gaps and overeating later.');
+  }
+  if (recs.length === 0) {
+    recs.push('Great balance so far — keep logging meals to stay on track!');
+  }
+  return recs;
 }

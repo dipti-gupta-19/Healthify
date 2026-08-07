@@ -1,25 +1,29 @@
 import { NextResponse } from 'next/server';
-import { analyzeFood, type NutritionFacts, type UserProfile } from '@/lib/nutrition';
+import { analyzePackagedFood, type NutritionFacts, type UserProfile } from '@/lib/nutrition';
+import { analyzeLabelFromImage, analyzeTextForFood } from '@/lib/vision';
+import { extractProductNameFromLabel, findFoodMatch } from '@/lib/food-db';
 
-interface OFFResponse {
-  status: number;
-  product?: {
-    product_name?: string;
-    ingredients_text?: string;
-    ingredients?: { text: string }[];
-    nutriments?: {
-      'energy-kcal_100g'?: number;
-      proteins_100g?: number;
-      carbohydrates_100g?: number;
-      fat_100g?: number;
-      fiber_100g?: number;
-      sugars_100g?: number;
-      salt_100g?: number;
-      sodium_100g?: number;
-    };
-    serving_size?: string;
-    serving_quantity?: number;
+interface OFFProduct {
+  product_name?: string;
+  product_name_en?: string;
+  brands?: string;
+  generic_name?: string;
+  categories?: string;
+  ingredients_text?: string;
+  ingredients?: { text: string }[];
+  nutriments?: {
+    'energy-kcal_100g'?: number;
+    'energy-kcal'?: number;
+    proteins_100g?: number;
+    carbohydrates_100g?: number;
+    fat_100g?: number;
+    fiber_100g?: number;
+    sugars_100g?: number;
+    salt_100g?: number;
+    sodium_100g?: number;
   };
+  serving_size?: string;
+  serving_quantity?: number;
 }
 
 function parseIngredients(text: string): string[] {
@@ -64,6 +68,8 @@ const INGREDIENT_NUTRITION: Record<string, Partial<NutritionFacts>> = {
   'coconut': { calories: 354, fat: 33, carbs: 15, fiber: 9 },
   'cocoa': { calories: 228, carbs: 58, fat: 14, fiber: 33, protein: 20 },
   'vanillin': { calories: 288, carbs: 63 },
+  'dehydrated potatoes': { calories: 77, carbs: 17, fiber: 2.2, protein: 2 },
+  'vegetable oil': { calories: 884, fat: 100 },
 };
 
 function estimateFromIngredients(ingredients: string[]): NutritionFacts {
@@ -100,13 +106,64 @@ function estimateFromIngredients(ingredients: string[]): NutritionFacts {
   };
 }
 
+function isProductFound(data: { status?: number | string; product?: OFFProduct }): boolean {
+  return data.product != null && (data.status === 1 || data.status === 'success');
+}
+
+function buildProductName(p: OFFProduct): string {
+  const name = p.product_name_en || p.product_name || p.generic_name || '';
+  const brand = p.brands?.split(',')[0]?.trim();
+  const isLatin = (s: string) => /^[\x00-\x7F\u00C0-\u024F]+$/.test(s.replace(/[^a-zA-Z\s'-]/g, ''));
+
+  if (name && isLatin(name.replace(/[^a-zA-Z\s'-]/g, '')) && name.replace(/[^a-zA-Z]/g, '').length > 2) {
+    if (brand && !name.toLowerCase().includes(brand.toLowerCase())) {
+      return `${brand} ${name}`;
+    }
+    return name;
+  }
+
+  if (brand && p.generic_name) return `${brand} ${p.generic_name}`;
+  if (brand && p.categories) {
+    const cat = p.categories.split(',')[0]?.trim();
+    if (cat) return `${brand} ${cat}`;
+  }
+  if (brand) return brand;
+  return name || 'Unknown Product';
+}
+
+function extractNutrition(p: OFFProduct): NutritionFacts {
+  const n = p.nutriments || {};
+  const serving = p.serving_quantity || 100;
+  const scale = serving / 100;
+  const sodiumPer100g = n.sodium_100g || (n.salt_100g ? n.salt_100g * 400 : 0);
+  const caloriesPer100g = n['energy-kcal_100g'] || n['energy-kcal'] || 0;
+
+  return {
+    calories: Math.round(caloriesPer100g * scale),
+    protein: Math.round((n.proteins_100g || 0) * scale * 10) / 10,
+    carbs: Math.round((n.carbohydrates_100g || 0) * scale * 10) / 10,
+    fat: Math.round((n.fat_100g || 0) * scale * 10) / 10,
+    fiber: Math.round((n.fiber_100g || 0) * scale * 10) / 10,
+    sugar: Math.round((n.sugars_100g || 0) * scale * 10) / 10,
+    sodium: Math.round(sodiumPer100g * scale),
+  };
+}
+
+function buildServingLabel(p: OFFProduct): string {
+  if (p.serving_size) return p.serving_size;
+  if (p.serving_quantity) return `${p.serving_quantity}g per serving`;
+  return 'per 100g';
+}
+
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { barcode, ingredientText, profile } = body as {
+    const { barcode, ingredientText, profile, imageBase64, mimeType } = body as {
       barcode?: string;
       ingredientText?: string;
       profile: UserProfile;
+      imageBase64?: string;
+      mimeType?: string;
     };
 
     if (!profile) {
@@ -116,47 +173,95 @@ export async function POST(req: Request) {
     let facts: NutritionFacts;
     let foodName: string;
     let ingredients: string[] = [];
+    let categories: string | undefined;
+    let servingLabel: string | undefined;
 
     if (barcode) {
-      const res = await fetch(
-        `https://world.openfoodfacts.org/api/v0/product/${barcode}.json`,
+      const cleanBarcode = barcode.trim().replace(/\D/g, '');
+      let p: OFFProduct | null = null;
+
+      const v2Res = await fetch(
+        `https://world.openfoodfacts.org/api/v2/product/${cleanBarcode}?fields=product_name,product_name_en,brands,generic_name,categories,ingredients_text,ingredients,nutriments,serving_size,serving_quantity`,
         { headers: { 'User-Agent': 'Healthify/1.0' } },
       );
-      if (!res.ok) {
-        return NextResponse.json({ error: 'Failed to reach Open Food Facts. Try again.' }, { status: 502 });
+      if (v2Res.ok) {
+        const data = await v2Res.json();
+        if (isProductFound(data)) {
+          p = data.product as OFFProduct;
+        }
       }
-      const data: OFFResponse = await res.json();
-      if (data.status !== 1 || !data.product) {
-        return NextResponse.json({ error: 'Product not found in database. Try entering the ingredient list instead.' }, { status: 404 });
+
+      if (!p) {
+        const v0Res = await fetch(
+          `https://world.openfoodfacts.org/api/v0/product/${cleanBarcode}.json`,
+          { headers: { 'User-Agent': 'Healthify/1.0' } },
+        );
+        if (v0Res.ok) {
+          const data = await v0Res.json();
+          if (data.status === 1 && data.product) {
+            p = data.product as OFFProduct;
+          }
+        }
       }
-      const p = data.product;
-      foodName = p.product_name || 'Unknown Product';
-      const n = p.nutriments || {};
-      const serving = p.serving_quantity || 100;
-      const scale = serving / 100;
-      facts = {
-        calories: Math.round((n['energy-kcal_100g'] || 0) * scale),
-        protein: Math.round((n.proteins_100g || 0) * scale * 10) / 10,
-        carbs: Math.round((n.carbohydrates_100g || 0) * scale * 10) / 10,
-        fat: Math.round((n.fat_100g || 0) * scale * 10) / 10,
-        fiber: Math.round((n.fiber_100g || 0) * scale * 10) / 10,
-        sugar: Math.round((n.sugars_100g || 0) * scale * 10) / 10,
-        sodium: Math.round((n.sodium_100g || (n.salt_100g || 0) * 388) * scale),
-      };
+
+      if (!p) {
+        return NextResponse.json({ error: 'Product not found in database. Try scanning the ingredient label instead.' }, { status: 404 });
+      }
+
+      foodName = buildProductName(p);
+      facts = extractNutrition(p);
+      categories = p.categories;
+      servingLabel = buildServingLabel(p);
       ingredients = parseIngredients(p.ingredients_text || '');
       if (ingredients.length === 0 && p.ingredients) {
         ingredients = p.ingredients.map((i) => i.text);
       }
-    } else if (ingredientText) {
-      ingredients = parseIngredients(ingredientText);
-      foodName = 'Custom Packaged Food';
-      facts = estimateFromIngredients(ingredients);
+    } else if (ingredientText || imageBase64) {
+      let text = ingredientText || '';
+      let productName: string | null = null;
+
+      if (imageBase64) {
+        const labelResult = await analyzeLabelFromImage(imageBase64, mimeType || 'image/jpeg');
+        if (labelResult) {
+          productName = labelResult.productName;
+          text = labelResult.ingredientsText || labelResult.ingredients.join(', ');
+          ingredients = labelResult.ingredients;
+        }
+      }
+
+      if (!text && imageBase64) {
+        return NextResponse.json({ error: 'Could not read label from image. Try pasting ingredients manually.' }, { status: 400 });
+      }
+
+      if (!productName) {
+        productName = extractProductNameFromLabel(text);
+      }
+
+      const textAnalysis = analyzeTextForFood(text);
+      foodName = productName || textAnalysis?.name || 'Packaged Food';
+
+      if (!ingredients.length) {
+        ingredients = parseIngredients(text);
+      }
+
+      const dbMatch = findFoodMatch(foodName);
+      if (dbMatch && !textAnalysis) {
+        facts = dbMatch.entry.facts;
+        foodName = productName || dbMatch.key;
+      } else if (textAnalysis && textAnalysis.source === 'ocr') {
+        facts = textAnalysis.facts;
+      } else {
+        facts = estimateFromIngredients(ingredients);
+      }
     } else {
-      return NextResponse.json({ error: 'barcode or ingredientText required' }, { status: 400 });
+      return NextResponse.json({ error: 'barcode, ingredientText, or imageBase64 required' }, { status: 400 });
     }
 
-    const analysis = analyzeFood(foodName, facts, profile, ingredients);
-    return NextResponse.json({ analysis });
+    const analysis = analyzePackagedFood(foodName, facts, profile, ingredients, {
+      categories,
+      servingLabel,
+    });
+    return NextResponse.json({ analysis, productName: foodName });
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Unknown error';
     return NextResponse.json({ error: `Analysis failed: ${msg}` }, { status: 500 });

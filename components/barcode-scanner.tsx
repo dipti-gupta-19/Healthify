@@ -27,13 +27,16 @@ export function BarcodeScanner({ onDetected }: { onDetected: (code: string) => v
       ]);
       const reader = new BrowserMultiFormatReader(hints);
 
+      setScanning(true);
+      await new Promise((r) => setTimeout(r, 150));
+
       if (!videoRef.current) {
         toast.error('Camera element not ready');
+        setScanning(false);
         setStarting(false);
         return;
       }
 
-      setScanning(true);
       setStarting(false);
 
       const controls = await reader.decodeFromVideoDevice(
@@ -74,31 +77,32 @@ export function BarcodeScanner({ onDetected }: { onDetected: (code: string) => v
   }, []);
 
   return (
-    <div>
-      {!scanning ? (
-        <Button onClick={startScan} variant="outline" className="w-full gap-2" disabled={starting}>
-          {starting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Camera className="h-4 w-4" />}
-          {starting ? 'Starting camera...' : 'Scan with Camera'}
-        </Button>
-      ) : (
-        <div className="space-y-3">
-          <div className="relative overflow-hidden rounded-xl border-2 border-primary bg-black">
-            <video ref={videoRef} className="w-full" playsInline muted />
-            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-              <div className="w-3/4 h-16 border-2 border-primary rounded-lg bg-primary/10">
-                <div className="h-full w-full flex items-center justify-center">
-                  <ScanLine className="h-6 w-6 text-primary animate-pulse" />
-                </div>
-              </div>
+    <div className="space-y-3">
+      <div className={`relative overflow-hidden rounded-xl border-2 border-primary bg-black ${scanning ? '' : 'hidden'}`}>
+        <video ref={videoRef} className="w-full" playsInline muted />
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+          <div className="w-3/4 h-16 border-2 border-primary rounded-lg bg-primary/10">
+            <div className="h-full w-full flex items-center justify-center">
+              <ScanLine className="h-6 w-6 text-primary animate-pulse" />
             </div>
           </div>
+        </div>
+      </div>
+      {scanning && (
+        <>
           <p className="text-xs text-muted-foreground text-center">
             Point your camera at the barcode on the packaging
           </p>
           <Button onClick={stopScan} variant="outline" className="w-full gap-2">
             <X className="h-4 w-4" /> Stop Camera
           </Button>
-        </div>
+        </>
+      )}
+      {!scanning && (
+        <Button onClick={startScan} variant="outline" className="w-full gap-2" disabled={starting}>
+          {starting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Camera className="h-4 w-4" />}
+          {starting ? 'Starting camera...' : 'Scan with Camera'}
+        </Button>
       )}
     </div>
   );

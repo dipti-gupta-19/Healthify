@@ -8,6 +8,9 @@ let cachedDb: Db | null = null;
 let connecting = false;
 
 export async function getDb(): Promise<Db> {
+  if (!process.env.MONGODB_URI) {
+    throw new Error('MONGODB_URI environment variable is not set');
+  }
   if (cachedClient && cachedDb) {
     return cachedDb;
   }
@@ -20,8 +23,9 @@ export async function getDb(): Promise<Db> {
   connecting = true;
   try {
     const client = new MongoClient(uri, {
-      serverSelectionTimeoutMS: 10000,
-      connectTimeoutMS: 10000,
+      serverSelectionTimeoutMS: 5000,
+      connectTimeoutMS: 5000,
+      maxPoolSize: 10,
     });
     await client.connect();
     cachedClient = client;

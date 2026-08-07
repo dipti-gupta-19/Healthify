@@ -1,16 +1,19 @@
 import type { Metadata } from 'next';
 import './globals.css';
 import { Inter } from 'next/font/google';
-import { ProfileProvider } from '@/components/profile-context';
-import { Navbar } from '@/components/navbar';
-import { Toaster } from '@/components/ui/sonner';
-import { ThemeProvider } from 'next-themes';
+import { AppProviders } from '@/components/providers';
 
-const inter = Inter({ subsets: ['latin'] });
+const inter = Inter({
+  subsets: ['latin'],
+  display: 'swap',
+  preload: true,
+});
 
 export const metadata: Metadata = {
   title: 'Healthify — AI Nutrition Assistant',
   description: 'Identify food, get a personalized health verdict, and track your daily nutrition.',
+  viewport: 'width=device-width, initial-scale=1, maximum-scale=1',
+  themeColor: '#2d9f6f',
 };
 
 export default function RootLayout({
@@ -21,13 +24,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={inter.className}>
-        <ThemeProvider attribute="class" defaultTheme="light">
-          <ProfileProvider>
-            <Navbar />
-            <main className="min-h-[calc(100vh-64px)]">{children}</main>
-            <Toaster richColors position="top-center" />
-          </ProfileProvider>
-        </ThemeProvider>
+        <AppProviders>{children}</AppProviders>
       </body>
     </html>
   );

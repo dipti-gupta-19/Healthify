@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
 import { X, Plus, Activity, Target, Stethoscope, AlertTriangle } from 'lucide-react';
-import type { UserProfile, Sex, ActivityLevel, Goal, MedicalCondition } from '@/lib/nutrition';
+import type { UserProfile, Sex, ActivityLevel, Goal, MedicalCondition, DietType } from '@/lib/nutrition';
 import { calculateTargets } from '@/lib/nutrition';
 import { toast } from 'sonner';
 
@@ -34,6 +34,7 @@ export default function ProfilePage() {
     heightCm: 170,
     activityLevel: 'moderate',
     goal: 'maintain',
+    dietType: 'vegetarian',
     medicalConditions: [],
     allergies: [],
   });
@@ -72,9 +73,13 @@ export default function ProfilePage() {
       toast.error('Please enter your name');
       return;
     }
-    await saveProfile(form);
-    setSaved(true);
-    toast.success('Profile saved! Your nutrition targets are ready.');
+    try {
+      await saveProfile(form);
+      setSaved(true);
+      toast.success('Profile saved! Your nutrition targets are ready.');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to save profile');
+    }
   };
 
   if (loading) {
@@ -87,6 +92,33 @@ export default function ProfilePage() {
       <p className="text-muted-foreground mb-8">This powers your personalized food verdicts. Update anytime.</p>
 
       <div className="space-y-6">
+        <Card className="p-6 border-2 border-primary/30 bg-primary/5">
+          <h2 className="text-lg font-semibold mb-2">🥗 Veg or Non-Veg?</h2>
+          <p className="text-sm text-muted-foreground mb-4">
+            We&apos;ll warn you if scanned food contains egg, meat, or fish — so you always know what you&apos;re eating.
+          </p>
+          <div className="grid grid-cols-2 gap-3">
+            {([
+              { v: 'vegetarian' as DietType, label: 'Vegetarian', emoji: '🥗', desc: 'No meat or fish' },
+              { v: 'non_vegetarian' as DietType, label: 'Non-Vegetarian', emoji: '🍗', desc: 'All foods' },
+            ]).map((d) => (
+              <button
+                key={d.v}
+                onClick={() => setForm({ ...form, dietType: d.v })}
+                className={`rounded-xl border-2 p-4 text-left transition-all ${
+                  form.dietType === d.v
+                    ? 'border-primary bg-secondary text-secondary-foreground'
+                    : 'border-border hover:border-primary/50'
+                }`}
+              >
+                <div className="text-2xl mb-1">{d.emoji}</div>
+                <div className="font-semibold">{d.label}</div>
+                <div className="text-xs text-muted-foreground mt-0.5">{d.desc}</div>
+              </button>
+            ))}
+          </div>
+        </Card>
+
         <Card className="p-6 animate-slide-up">
           <div className="flex items-center gap-2 mb-5">
             <UserIcon />

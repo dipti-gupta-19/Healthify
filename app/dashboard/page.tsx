@@ -5,9 +5,9 @@ import { useProfile } from '@/components/profile-context';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Clock, TrendingUp, AlertTriangle, Flame, Trash2, Utensils, Calendar } from 'lucide-react';
+import { Clock, TrendingUp, AlertTriangle, Flame, Trash2, Utensils, Calendar, Lightbulb, HeartPulse } from 'lucide-react';
 import type { LoggedMeal, NutritionFacts, NutritionTargets } from '@/lib/nutrition';
-import { sumFacts, detectGaps, emptyFacts } from '@/lib/nutrition';
+import { sumFacts, detectGaps, getDailyRecommendations } from '@/lib/nutrition';
 import { toast } from 'sonner';
 
 const MEAL_ICONS: Record<string, string> = {
@@ -41,6 +41,9 @@ export default function DashboardPage() {
 
   const consumed = sumFacts(todayMeals);
   const gaps = detectGaps(meals);
+  const recommendations = targets && profile
+    ? getDailyRecommendations(consumed, targets, profile)
+    : [];
 
   const remaining: NutritionFacts = {
     calories: (targets?.calories || 0) - consumed.calories,
@@ -121,6 +124,23 @@ export default function DashboardPage() {
         </Card>
       </div>
 
+      {recommendations.length > 0 && (
+        <Card className="p-5 mb-6 border-primary/30 bg-primary/5 animate-slide-up">
+          <div className="flex items-center gap-2 mb-3">
+            <Lightbulb className="h-5 w-5 text-primary" />
+            <h2 className="text-lg font-semibold">What to eat next</h2>
+          </div>
+          <div className="space-y-2">
+            {recommendations.map((r, i) => (
+              <div key={i} className="flex items-start gap-2 text-sm">
+                <span className="text-primary mt-0.5">•</span>
+                <span>{r}</span>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+
       {gaps.length > 0 && (
         <Card className="p-5 mb-6 border-warning/30 bg-warning/5 animate-slide-up">
           <div className="flex items-center gap-2 mb-3">
@@ -169,6 +189,12 @@ export default function DashboardPage() {
                 </div>
                 {meal.warnings.length > 0 && (
                   <div className="text-xs text-destructive mt-1">{meal.warnings.join(' · ')}</div>
+                )}
+                {meal.feedback && meal.feedback.symptoms.some((s) => s !== 'none') && (
+                  <div className="flex items-center gap-1 mt-1 text-xs text-warning">
+                    <HeartPulse className="h-3 w-3" />
+                    {meal.feedback.suspectedAllergy ? 'Allergy suspected' : meal.feedback.suspectedFoodPoisoning ? 'Food poisoning suspected' : 'Post-meal symptoms reported'}
+                  </div>
                 )}
               </div>
               <button
