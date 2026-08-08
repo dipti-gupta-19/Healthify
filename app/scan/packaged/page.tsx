@@ -101,7 +101,7 @@ export default function PackagedScanPage() {
       setLabelPreview(dataUrl);
 
       try {
-        const { extractTextFromImage } = await import('@/lib/ocr');
+        const { extractTextFromImage } = await import('@/lib/ocr-client');
         const ocrText = await extractTextFromImage(file);
         if (ocrText.length > 5) {
           setIngredientText(ocrText);

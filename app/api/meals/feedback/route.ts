@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getDb } from '@/lib/mongodb';
+import { getDb, ObjectId } from '@/lib/mongodb';
 import {
   analyzeFeedbackSymptoms,
   type FeedbackSymptom,
@@ -10,11 +10,12 @@ export async function POST(req: Request) {
   try {
     const userId = req.headers.get('x-user-id') || 'demo-user';
     const body = await req.json();
-    const { mealId, symptoms, severity, notes } = body as {
+    const { mealId, symptoms, severity, notes, liked } = body as {
       mealId: string;
       symptoms: FeedbackSymptom[];
       severity: MealFeedback['severity'];
       notes?: string;
+      liked?: boolean;
     };
 
     if (!mealId) {
@@ -29,10 +30,10 @@ export async function POST(req: Request) {
       submittedAt: new Date().toISOString(),
       suspectedAllergy: analysis.suspectedAllergy,
       suspectedFoodPoisoning: analysis.suspectedFoodPoisoning,
+      liked: liked ?? (symptoms?.length === 1 && symptoms[0] === 'none'),
     };
 
     const db = await getDb();
-    const { ObjectId } = await import('mongodb');
 
     const meal = await db.collection('meals').findOne({
       _id: new ObjectId(mealId),

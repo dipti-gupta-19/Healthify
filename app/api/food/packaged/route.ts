@@ -1,7 +1,12 @@
 import { NextResponse } from 'next/server';
-import { analyzePackagedFood, type NutritionFacts, type UserProfile } from '@/lib/nutrition';
-import { analyzeLabelFromImage, analyzeTextForFood } from '@/lib/vision';
-import { extractProductNameFromLabel, findFoodMatch } from '@/lib/food-db';
+import {
+  analyzePackagedFood,
+  checkBeneficialIngredients,
+  type NutritionFacts,
+  type UserProfile,
+} from '@/lib/nutrition';
+import { analyzeLabelFromImage, analyzePackagedIngredients } from '@/lib/vision';
+import { extractProductNameFromLabel } from '@/lib/food-db';
 
 interface OFFProduct {
   product_name?: string;
@@ -175,6 +180,8 @@ export async function POST(req: Request) {
     let ingredients: string[] = [];
     let categories: string | undefined;
     let servingLabel: string | undefined;
+    let extraHarmful: string[] = [];
+    let extraBeneficial: string[] = [];
 
     if (barcode) {
       const cleanBarcode = barcode.trim().replace(/\D/g, '');
@@ -205,7 +212,9 @@ export async function POST(req: Request) {
       }
 
       if (!p) {
-        return NextResponse.json({ error: 'Product not found in database. Try scanning the ingredient label instead.' }, { status: 404 });
+        return NextResponse.json({
+          error: 'Product not found in database. Try scanning the ingredient label instead.',
+        }, { status: 404 });
       }
 
       foodName = buildProductName(p);
@@ -230,37 +239,54 @@ export async function POST(req: Request) {
       }
 
       if (!text && imageBase64) {
-        return NextResponse.json({ error: 'Could not read label from image. Try pasting ingredients manually.' }, { status: 400 });
+        return NextResponse.json({
+          error: 'Could not read label from image. Try pasting ingredients manually.',
+        }, { status: 400 });
       }
 
       if (!productName) {
         productName = extractProductNameFromLabel(text);
       }
 
-      const textAnalysis = analyzeTextForFood(text);
-      foodName = productName || textAnalysis?.name || 'Packaged Food';
+      foodName = productName || 'Packaged Food';
 
       if (!ingredients.length) {
         ingredients = parseIngredients(text);
       }
 
-      const dbMatch = findFoodMatch(foodName);
-      if (dbMatch && !textAnalysis) {
-        facts = dbMatch.entry.facts;
-        foodName = productName || dbMatch.key;
-      } else if (textAnalysis && textAnalysis.source === 'ocr') {
-        facts = textAnalysis.facts;
-      } else {
-        facts = estimateFromIngredients(ingredients);
+      facts = estimateFromIngredients(ingredients);
+
+      const aiIngredientAnalysis = await analyzePackagedIngredients(foodName, ingredients);
+      if (aiIngredientAnalysis) {
+        extraHarmful = aiIngredientAnalysis.harmful;
+        extraBeneficial = aiIngredientAnalysis.beneficial;
+        if (aiIngredientAnalysis.facts && aiIngredientAnalysis.facts.calories > 0) {
+          facts = aiIngredientAnalysis.facts;
+        }
       }
     } else {
-      return NextResponse.json({ error: 'barcode, ingredientText, or imageBase64 required' }, { status: 400 });
+      return NextResponse.json({
+        error: 'barcode, ingredientText, or imageBase64 required',
+      }, { status: 400 });
     }
 
     const analysis = analyzePackagedFood(foodName, facts, profile, ingredients, {
       categories,
       servingLabel,
     });
+
+    if (extraHarmful.length) {
+      analysis.harmfulAdditives = [...new Set([...analysis.harmfulAdditives, ...extraHarmful])];
+      analysis.healthConcerns = [...new Set([...(analysis.healthConcerns || []), ...extraHarmful])];
+    }
+    if (extraBeneficial.length) {
+      analysis.beneficialAspects = [...new Set([
+        ...(analysis.beneficialAspects || []),
+        ...extraBeneficial,
+        ...checkBeneficialIngredients(ingredients),
+      ])].slice(0, 8);
+    }
+
     return NextResponse.json({ analysis, productName: foodName });
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Unknown error';

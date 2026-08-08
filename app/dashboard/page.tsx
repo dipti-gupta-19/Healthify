@@ -5,45 +5,94 @@ import { useProfile } from '@/components/profile-context';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Clock, TrendingUp, AlertTriangle, Flame, Trash2, Utensils, Calendar, Lightbulb, HeartPulse } from 'lucide-react';
-import type { LoggedMeal, NutritionFacts, NutritionTargets } from '@/lib/nutrition';
-import { sumFacts, detectGaps, getDailyRecommendations } from '@/lib/nutrition';
+import { TrendingUp, AlertTriangle, Flame, Utensils, Calendar, Lightbulb } from 'lucide-react';
+import type { LoggedMeal, NutritionFacts } from '@/lib/nutrition';
+import {
+  sumFacts,
+  detectGaps,
+  getDailyRecommendations,
+  getLikedMealRecommendations,
+  getMealTimeSuggestion,
+} from '@/lib/nutrition';
+import { MealTimelineCard } from '@/components/meal-timeline-card';
+import { MealTimeNotifier } from '@/components/meal-time-notifier';
 import { toast } from 'sonner';
 
-const MEAL_ICONS: Record<string, string> = {
-  breakfast: '🌅',
-  lunch: '☀️',
-  dinner: '🌙',
-  snack: '🍎',
-};
+const MEALS_CACHE_KEY = 'healthify-meals-cache';
+
+function readMealsCache(): LoggedMeal[] | null {
+  try {
+    const raw = sessionStorage.getItem(MEALS_CACHE_KEY);
+    return raw ? JSON.parse(raw) as LoggedMeal[] : null;
+  } catch {
+    return null;
+  }
+}
+
+function cacheMeals(meals: LoggedMeal[]) {
+  try {
+    sessionStorage.setItem(MEALS_CACHE_KEY, JSON.stringify(meals));
+  } catch {
+    // ignore quota
+  }
+}
+
+function groupMealsByDate(meals: LoggedMeal[]): { date: string; label: string; meals: LoggedMeal[] }[] {
+  const groups: Record<string, LoggedMeal[]> = {};
+  for (const m of meals) {
+    const d = new Date(m.loggedAt).toDateString();
+    if (!groups[d]) groups[d] = [];
+    groups[d].push(m);
+  }
+  return Object.entries(groups)
+    .sort((a, b) => new Date(b[0]).getTime() - new Date(a[0]).getTime())
+    .map(([date, items]) => ({
+      date,
+      label: date === new Date().toDateString()
+        ? 'Today'
+        : new Date(date).toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' }),
+      meals: items.sort((a, b) => new Date(b.loggedAt).getTime() - new Date(a.loggedAt).getTime()),
+    }));
+}
 
 export default function DashboardPage() {
   const { profile, targets, loading } = useProfile();
-  const [meals, setMeals] = useState<LoggedMeal[]>([]);
-  const [refreshKey, setRefreshKey] = useState(0);
+  const [meals, setMeals] = useState<LoggedMeal[]>(readMealsCache() || []);
+  const [mealsLoading, setMealsLoading] = useState(!readMealsCache());
+
+  const loadMeals = useCallback(async () => {
+    try {
+      const res = await fetch('/api/meals', { headers: { 'x-user-id': 'demo-user' } });
+      const data = await res.json();
+      const list = data.meals || [];
+      setMeals(list);
+      cacheMeals(list);
+    } catch {
+      // keep cache
+    } finally {
+      setMealsLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
-    (async () => {
-      try {
-        const res = await fetch('/api/meals', { headers: { 'x-user-id': 'demo-user' } });
-        const data = await res.json();
-        setMeals(data.meals || []);
-      } catch {
-        // ignore
-      }
-    })();
-  }, [refreshKey]);
+    loadMeals();
+  }, [loadMeals]);
 
   const todayStr = new Date().toDateString();
-  const todayMeals = meals
-    .filter((m) => new Date(m.loggedAt).toDateString() === todayStr)
-    .sort((a, b) => new Date(b.loggedAt).getTime() - new Date(a.loggedAt).getTime());
-
+  const todayMeals = meals.filter((m) => new Date(m.loggedAt).toDateString() === todayStr);
   const consumed = sumFacts(todayMeals);
   const gaps = detectGaps(meals);
+
   const recommendations = targets && profile
-    ? getDailyRecommendations(consumed, targets, profile)
+    ? [
+      ...getDailyRecommendations(consumed, targets, profile),
+      ...getLikedMealRecommendations(meals, profile, targets),
+    ]
     : [];
+
+  const mealTimeHint = targets && profile
+    ? getMealTimeSuggestion(profile, targets, consumed)
+    : null;
 
   const remaining: NutritionFacts = {
     calories: (targets?.calories || 0) - consumed.calories,
@@ -57,14 +106,14 @@ export default function DashboardPage() {
 
   const deleteMeal = async (id: string) => {
     await fetch(`/api/meals?id=${id}`, { method: 'DELETE', headers: { 'x-user-id': 'demo-user' } });
-    setRefreshKey((k) => k + 1);
+    await loadMeals();
     toast.success('Meal removed');
   };
 
-  const pct = (val: number, target: number) => Math.min(100, Math.max(0, (val / (target || 1)) * 100));
+  const timelineGroups = groupMealsByDate(meals.slice(0, 50));
 
-  if (loading) {
-    return <div className="flex items-center justify-center py-24"><div className="animate-pulse text-muted-foreground">Loading...</div></div>;
+  if (loading && !profile) {
+    return <div className="flex items-center justify-center py-24 text-muted-foreground">Loading...</div>;
   }
 
   if (!profile) {
@@ -80,15 +129,24 @@ export default function DashboardPage() {
 
   return (
     <div className="mx-auto max-w-5xl px-4 sm:px-6 py-8">
-      <div className="mb-8 animate-fade-in">
-        <h1 className="text-3xl font-bold mb-1">Today's Dashboard</h1>
+      <MealTimeNotifier consumedCalories={consumed.calories} />
+
+      <div className="mb-6">
+        <h1 className="text-3xl font-bold mb-1">Today&apos;s Dashboard</h1>
         <p className="text-muted-foreground">
           {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
         </p>
       </div>
 
+      {mealTimeHint && (
+        <Card className="p-4 mb-6 border-primary/40 bg-primary/10">
+          <p className="font-semibold text-primary">{mealTimeHint.message}</p>
+          <p className="text-sm text-muted-foreground mt-1">{mealTimeHint.suggestion}</p>
+        </Card>
+      )}
+
       <div className="grid lg:grid-cols-3 gap-6 mb-8">
-        <Card className="lg:col-span-2 p-6 animate-slide-up">
+        <Card className="lg:col-span-2 p-6">
           <div className="flex items-center justify-between mb-5">
             <div className="flex items-center gap-2">
               <Flame className="h-5 w-5 text-primary" />
@@ -109,31 +167,30 @@ export default function DashboardPage() {
           </div>
         </Card>
 
-        <Card className="p-6 animate-slide-up" style={{ animationDelay: '0.1s' }}>
+        <Card className="p-6">
           <div className="flex items-center gap-2 mb-4">
             <TrendingUp className="h-5 w-5 text-primary" />
             <h2 className="text-lg font-semibold">Summary</h2>
           </div>
-          <div className="space-y-3">
-            <div className="flex justify-between text-sm"><span className="text-muted-foreground">Meals logged</span><span className="font-semibold">{todayMeals.length}</span></div>
-            <div className="flex justify-between text-sm"><span className="text-muted-foreground">Calories consumed</span><span className="font-semibold">{consumed.calories} kcal</span></div>
-            <div className="flex justify-between text-sm"><span className="text-muted-foreground">Protein consumed</span><span className="font-semibold">{consumed.protein} g</span></div>
-            <div className="flex justify-between text-sm"><span className="text-muted-foreground">Daily target</span><span className="font-semibold">{targets?.calories} kcal</span></div>
-            <div className="flex justify-between text-sm"><span className="text-muted-foreground">Goal</span><span className="font-semibold capitalize">{profile.goal === 'loss' ? 'Weight Loss' : profile.goal === 'gain' ? 'Muscle Gain' : 'Maintain'}</span></div>
+          <div className="space-y-3 text-sm">
+            <div className="flex justify-between"><span className="text-muted-foreground">Meals today</span><span className="font-semibold">{todayMeals.length}</span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">Calories</span><span className="font-semibold">{consumed.calories} kcal</span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">Daily target</span><span className="font-semibold">{targets?.calories} kcal</span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">Goal</span><span className="font-semibold capitalize">{profile.goal === 'loss' ? 'Weight Loss' : profile.goal === 'gain' ? 'Muscle Gain' : 'Maintain'}</span></div>
           </div>
         </Card>
       </div>
 
       {recommendations.length > 0 && (
-        <Card className="p-5 mb-6 border-primary/30 bg-primary/5 animate-slide-up">
+        <Card className="p-5 mb-6 border-primary/30 bg-primary/5">
           <div className="flex items-center gap-2 mb-3">
             <Lightbulb className="h-5 w-5 text-primary" />
             <h2 className="text-lg font-semibold">What to eat next</h2>
           </div>
-          <div className="space-y-2">
+          <div className="space-y-2 text-sm">
             {recommendations.map((r, i) => (
-              <div key={i} className="flex items-start gap-2 text-sm">
-                <span className="text-primary mt-0.5">•</span>
+              <div key={i} className="flex items-start gap-2">
+                <span className="text-primary">•</span>
                 <span>{r}</span>
               </div>
             ))}
@@ -142,15 +199,15 @@ export default function DashboardPage() {
       )}
 
       {gaps.length > 0 && (
-        <Card className="p-5 mb-6 border-warning/30 bg-warning/5 animate-slide-up">
+        <Card className="p-5 mb-6 border-warning/30 bg-warning/5">
           <div className="flex items-center gap-2 mb-3">
             <AlertTriangle className="h-5 w-5 text-warning" />
             <h2 className="text-lg font-semibold text-warning">Pattern Alerts</h2>
           </div>
-          <div className="space-y-2">
+          <div className="space-y-2 text-sm">
             {gaps.map((g, i) => (
-              <div key={i} className="flex items-start gap-2 text-sm">
-                <span className="text-warning mt-0.5">•</span>
+              <div key={i} className="flex items-start gap-2">
+                <span className="text-warning">•</span>
                 <span>{g}</span>
               </div>
             ))}
@@ -158,53 +215,38 @@ export default function DashboardPage() {
         </Card>
       )}
 
-      <div className="mb-4 flex items-center gap-2">
-        <Clock className="h-5 w-5 text-primary" />
+      <div className="mb-4 flex items-center justify-between">
         <h2 className="text-xl font-bold">Nutrition Timeline</h2>
+        <span className="text-xs text-muted-foreground">Tap a meal to see full details & give feedback</span>
       </div>
 
-      {todayMeals.length === 0 ? (
-        <Card className="p-12 text-center animate-fade-in">
+      {mealsLoading && meals.length === 0 ? (
+        <Card className="p-8 text-center text-muted-foreground">Loading meals...</Card>
+      ) : timelineGroups.length === 0 ? (
+        <Card className="p-12 text-center">
           <Calendar className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
-          <p className="text-muted-foreground mb-4">No meals logged yet today.</p>
+          <p className="text-muted-foreground mb-4">No meals logged yet.</p>
           <div className="flex justify-center gap-3">
             <a href="/scan/packaged"><Button variant="outline">Scan Packaged Food</Button></a>
             <a href="/scan/unpackaged"><Button>Scan Unpackaged Food</Button></a>
           </div>
         </Card>
       ) : (
-        <div className="space-y-3">
-          {todayMeals.map((meal) => (
-            <Card key={meal._id as string} className="p-4 flex items-center gap-4 animate-slide-up">
-              <span className="text-3xl">{meal.emoji}</span>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <h3 className="font-semibold capitalize truncate">{meal.foodName}</h3>
-                  <Badge variant="outline" className="capitalize">{MEAL_ICONS[meal.mealType]} {meal.mealType}</Badge>
-                </div>
-                <div className="text-xs text-muted-foreground mt-0.5">
-                  {new Date(meal.loggedAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
-                  {' · '}
-                  {meal.facts.calories} kcal · {meal.facts.protein}g protein · {meal.facts.carbs}g carbs · {meal.facts.fat}g fat
-                </div>
-                {meal.warnings.length > 0 && (
-                  <div className="text-xs text-destructive mt-1">{meal.warnings.join(' · ')}</div>
-                )}
-                {meal.feedback && meal.feedback.symptoms.some((s) => s !== 'none') && (
-                  <div className="flex items-center gap-1 mt-1 text-xs text-warning">
-                    <HeartPulse className="h-3 w-3" />
-                    {meal.feedback.suspectedAllergy ? 'Allergy suspected' : meal.feedback.suspectedFoodPoisoning ? 'Food poisoning suspected' : 'Post-meal symptoms reported'}
-                  </div>
-                )}
+        <div className="space-y-6">
+          {timelineGroups.map((group) => (
+            <div key={group.date}>
+              <h3 className="text-sm font-semibold text-muted-foreground mb-2">{group.label}</h3>
+              <div className="space-y-3">
+                {group.meals.map((meal) => (
+                  <MealTimelineCard
+                    key={meal._id as string}
+                    meal={meal}
+                    onDelete={deleteMeal}
+                    onFeedbackSubmitted={loadMeals}
+                  />
+                ))}
               </div>
-              <button
-                onClick={() => deleteMeal(meal._id as string)}
-                className="rounded-lg p-2 text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition flex-shrink-0"
-                aria-label="Delete meal"
-              >
-                <Trash2 className="h-4 w-4" />
-              </button>
-            </Card>
+            </div>
           ))}
         </div>
       )}
@@ -213,19 +255,9 @@ export default function DashboardPage() {
 }
 
 function BudgetStat({
-  label,
-  consumed,
-  target,
-  unit,
-  remaining,
-  warn,
+  label, consumed, target, unit, remaining, warn,
 }: {
-  label: string;
-  consumed: number;
-  target: number;
-  unit: string;
-  remaining: number;
-  warn?: boolean;
+  label: string; consumed: number; target: number; unit: string; remaining: number; warn?: boolean;
 }) {
   const over = remaining < 0;
   const pctVal = Math.min(100, Math.max(0, (consumed / (target || 1)) * 100));
@@ -239,7 +271,7 @@ function BudgetStat({
       </div>
       <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
         <div
-          className={`h-full rounded-full transition-all ${over ? 'bg-destructive' : warn ? 'bg-warning' : 'bg-primary'}`}
+          className={`h-full rounded-full ${over ? 'bg-destructive' : warn ? 'bg-warning' : 'bg-primary'}`}
           style={{ width: `${pctVal}%` }}
         />
       </div>

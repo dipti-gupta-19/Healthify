@@ -44,7 +44,8 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const refresh = useCallback(async () => {
-    setLoading(true);
+    const hasCache = readCachedProfile();
+    if (!hasCache) setLoading(true);
     try {
       const res = await fetch('/api/profile', { headers: { 'x-user-id': 'demo-user' } });
       const data = await res.json();

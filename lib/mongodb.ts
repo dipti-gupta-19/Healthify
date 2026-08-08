@@ -1,4 +1,6 @@
-import { MongoClient, Db } from 'mongodb';
+import { MongoClient, Db, ObjectId } from 'mongodb';
+
+export { ObjectId };
 
 const uri = process.env.MONGODB_URI as string;
 const dbName = process.env.MONGODB_DB || 'healthify';

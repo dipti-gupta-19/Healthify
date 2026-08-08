@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getDb } from '@/lib/mongodb';
+import { getDb, ObjectId } from '@/lib/mongodb';
 import { getMealType, type LoggedMeal } from '@/lib/nutrition';
 
 export async function GET(req: Request) {
@@ -34,6 +34,11 @@ export async function POST(req: Request) {
       mealType,
       warnings: body.warnings || [],
       ingredients: body.ingredients || [],
+      beneficialAspects: body.beneficialAspects || [],
+      harmfulAdditives: body.harmfulAdditives || [],
+      healthConcerns: body.healthConcerns || [],
+      isJunkFood: body.isJunkFood || false,
+      portionAdvice: body.portionAdvice || undefined,
     };
     const result = await db.collection('meals').insertOne(meal as any);
     return NextResponse.json({ ok: true, _id: result.insertedId });
@@ -50,7 +55,6 @@ export async function DELETE(req: Request) {
     const mealId = searchParams.get('id');
     if (!mealId) return NextResponse.json({ error: 'id required' }, { status: 400 });
     const db = await getDb();
-    const { ObjectId } = await import('mongodb');
     await db.collection('meals').deleteOne({ _id: new ObjectId(mealId), userId });
     return NextResponse.json({ ok: true });
   } catch (err) {

@@ -1,4 +1,4 @@
-export async function compressImage(file: File, maxWidth = 1024): Promise<string> {
+export async function compressImage(file: File, maxWidth = 800): Promise<string> {
   if (file.size < 200_000) {
     return readAsDataUrl(file);
   }
@@ -15,7 +15,7 @@ export async function compressImage(file: File, maxWidth = 1024): Promise<string
   const ctx = canvas.getContext('2d');
   if (!ctx) return dataUrl;
   ctx.drawImage(img, 0, 0, w, h);
-  return canvas.toDataURL('image/jpeg', 0.82);
+  return canvas.toDataURL('image/jpeg', 0.75);
 }
 
 function readAsDataUrl(file: File): Promise<string> {

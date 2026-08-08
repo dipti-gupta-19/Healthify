@@ -36,6 +36,11 @@ export const FOOD_DB: Record<string, { facts: NutritionFacts; emoji: string }> =
   'tandoori chicken': { facts: { calories: 165, protein: 27, carbs: 2, fat: 5, fiber: 0, sugar: 1, sodium: 380 }, emoji: '🍗' },
   'naan': { facts: { calories: 262, protein: 8, carbs: 45, fat: 5, fiber: 2, sugar: 2, sodium: 418 }, emoji: '🫓' },
   'lassi': { facts: { calories: 120, protein: 4, carbs: 18, fat: 3, fiber: 0, sugar: 15, sodium: 80 }, emoji: '🥛' },
+  'gulab jamun': { facts: { calories: 150, protein: 2, carbs: 28, fat: 4, fiber: 0, sugar: 22, sodium: 40 }, emoji: '🍡' },
+  'sweet': { facts: { calories: 150, protein: 2, carbs: 28, fat: 4, fiber: 0, sugar: 20, sodium: 30 }, emoji: '🍬' },
+  'sabzi': { facts: { calories: 140, protein: 4, carbs: 12, fat: 8, fiber: 3, sugar: 4, sodium: 420 }, emoji: '🍛' },
+  'poha': { facts: { calories: 180, protein: 4, carbs: 32, fat: 4, fiber: 2, sugar: 2, sodium: 350 }, emoji: '🍚' },
+  'buttermilk': { facts: { calories: 80, protein: 4, carbs: 10, fat: 2, fiber: 0, sugar: 8, sodium: 200 }, emoji: '🥛' },
   'chai': { facts: { calories: 60, protein: 2, carbs: 8, fat: 2, fiber: 0, sugar: 6, sodium: 40 }, emoji: '☕' },
   'chips': { facts: { calories: 536, protein: 7, carbs: 53, fat: 35, fiber: 4, sugar: 0.5, sodium: 480 }, emoji: '🥔' },
   'potato crisps': { facts: { calories: 536, protein: 7, carbs: 53, fat: 35, fiber: 4, sugar: 0.5, sodium: 480 }, emoji: '🥔' },
@@ -86,25 +91,57 @@ export function combineFoodNutrition(keys: string[]): { facts: NutritionFacts; e
       name: 'mixed meal',
     };
   }
-  if (keys.includes('thali') || keys.includes('indian thali') || keys.length >= 3) {
-    const thali = FOOD_DB['thali'];
-    return { facts: thali.facts, emoji: thali.emoji, name: keys.length >= 3 ? 'indian thali' : keys[0] };
+  return estimateMealFromItems(keys);
+}
+
+/** Sum nutrition for each detected item on a plate (duplicate keys = multiple servings). */
+export function estimateMealFromItems(keys: string[]): { facts: NutritionFacts; emoji: string; name: string } {
+  const counts: Record<string, number> = {};
+  for (const k of keys) {
+    counts[k] = (counts[k] || 0) + 1;
   }
+
   const facts: NutritionFacts = { calories: 0, protein: 0, carbs: 0, fat: 0, fiber: 0, sugar: 0, sodium: 0 };
   let emoji = '🍽️';
-  for (const k of keys) {
+  const labels: string[] = [];
+
+  for (const [k, count] of Object.entries(counts)) {
     const entry = FOOD_DB[k];
     if (!entry) continue;
-    facts.calories += entry.facts.calories;
-    facts.protein += entry.facts.protein;
-    facts.carbs += entry.facts.carbs;
-    facts.fat += entry.facts.fat;
-    facts.fiber += entry.facts.fiber;
-    facts.sugar += entry.facts.sugar;
-    facts.sodium += entry.facts.sodium;
+    facts.calories += entry.facts.calories * count;
+    facts.protein += entry.facts.protein * count;
+    facts.carbs += entry.facts.carbs * count;
+    facts.fat += entry.facts.fat * count;
+    facts.fiber += entry.facts.fiber * count;
+    facts.sugar += entry.facts.sugar * count;
+    facts.sodium += entry.facts.sodium * count;
     emoji = entry.emoji;
+    labels.push(count > 1 ? `${count}× ${k}` : k);
   }
-  return { facts, emoji, name: keys.join(' + ') };
+
+  if (facts.calories === 0) {
+    return {
+      facts: { calories: 200, protein: 8, carbs: 25, fat: 8, fiber: 2, sugar: 3, sodium: 300 },
+      emoji: '🍽️',
+      name: keys.join(' + '),
+    };
+  }
+
+  const name = labels.length >= 3 ? `mixed meal (${labels.slice(0, 5).join(', ')})` : labels.join(' + ');
+  return { facts, emoji, name };
+}
+
+export function pickEmoji(name: string, items?: string[]): string {
+  const text = `${name} ${(items || []).join(' ')}`.toLowerCase();
+  if (/thali|plate|mixed/i.test(text)) return '🍽️';
+  if (/biryani|rice/i.test(text)) return '🍚';
+  if (/dal|curry|sabzi/i.test(text)) return '🍛';
+  if (/roti|paratha|naan/i.test(text)) return '🫓';
+  if (/sweet|jamun|dessert/i.test(text)) return '🍡';
+  if (/lassi|buttermilk/i.test(text)) return '🥛';
+  if (/pizza/i.test(text)) return '🍕';
+  if (/burger/i.test(text)) return '🍔';
+  return '🍽️';
 }
 
 export function extractProductNameFromLabel(text: string): string | null {

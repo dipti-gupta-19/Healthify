@@ -5,9 +5,10 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
-import { CheckCircle2, XCircle, MinusCircle, Plus, Loader2, HeartPulse, ChevronDown } from 'lucide-react';
+import { CheckCircle2, XCircle, MinusCircle, Plus, Loader2, HeartPulse, ChevronDown, ThumbsUp, ThumbsDown } from 'lucide-react';
 import { useProfile } from '@/components/profile-context';
 import type { FoodAnalysis, UserProfile, NutritionTargets, FeedbackSymptom } from '@/lib/nutrition';
+import { classifyIngredient } from '@/lib/nutrition';
 import { toast } from 'sonner';
 
 const VERDICT_CONFIG = {
@@ -47,8 +48,9 @@ export function FoodCard({
   const [logged, setLogged] = useState(false);
   const [mealId, setMealId] = useState<string | null>(null);
   const [showFeedback, setShowFeedback] = useState(false);
-  const [showDetails, setShowDetails] = useState(false);
+  const [showDetails, setShowDetails] = useState(true);
   const [symptoms, setSymptoms] = useState<FeedbackSymptom[]>([]);
+  const [liked, setLiked] = useState<boolean | null>(null);
   const [feedbackNotes, setFeedbackNotes] = useState('');
   const [submittingFeedback, setSubmittingFeedback] = useState(false);
   const [feedbackMessage, setFeedbackMessage] = useState('');
@@ -72,6 +74,11 @@ export function FoodCard({
           verdict: analysis.verdict,
           warnings: analysis.warnings,
           ingredients: analysis.ingredients || [],
+          beneficialAspects: analysis.beneficialAspects || [],
+          harmfulAdditives: analysis.harmfulAdditives || [],
+          healthConcerns: analysis.healthConcerns || [],
+          isJunkFood: analysis.isJunkFood || false,
+          portionAdvice: analysis.portionAdvice || undefined,
         }),
       });
       const data = await res.json();
@@ -98,6 +105,7 @@ export function FoodCard({
     setSymptoms((prev) => {
       const without = prev.filter((s) => s !== 'none' && s !== symptom);
       if (prev.includes(symptom)) return without;
+      setLiked(null);
       return [...without, symptom];
     });
   };
@@ -110,10 +118,19 @@ export function FoodCard({
         ? 'severe'
         : symptoms.length > 1 ? 'moderate' : symptoms.length === 1 && symptoms[0] !== 'none' ? 'mild' : 'none';
 
+      const isLiked = liked === true || (liked === null && symptoms.length === 0);
+      const finalSymptoms: FeedbackSymptom[] = symptoms.length ? symptoms : ['none'];
+
       const res = await fetch('/api/meals/feedback', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-user-id': 'demo-user' },
-        body: JSON.stringify({ mealId, symptoms: symptoms.length ? symptoms : ['none'], severity, notes: feedbackNotes }),
+        body: JSON.stringify({
+          mealId,
+          symptoms: finalSymptoms,
+          severity,
+          notes: feedbackNotes,
+          liked: isLiked && finalSymptoms[0] === 'none',
+        }),
       });
       const data = await res.json();
       if (res.ok) {
@@ -124,7 +141,7 @@ export function FoodCard({
         } else if (data.suspectedFoodPoisoning) {
           toast.warning('Possible food poisoning — seek help if severe.');
         } else {
-          toast.success('Feedback recorded!');
+          toast.success(isLiked ? 'Glad you enjoyed it!' : 'Feedback recorded!');
         }
         setShowFeedback(false);
       } else {
@@ -144,6 +161,9 @@ export function FoodCard({
         <span className="text-4xl">{analysis.emoji}</span>
         <div className="flex-1 min-w-0">
           <h3 className="text-xl font-bold capitalize truncate">{analysis.name}</h3>
+          {analysis.cuisine && (
+            <span className="text-xs font-medium text-muted-foreground">{analysis.cuisine} cuisine</span>
+          )}
           <div className={`flex items-center gap-1.5 font-semibold ${verdict.color}`}>
             <VerdictIcon className="h-4 w-4" />
             {verdict.label}
@@ -174,6 +194,62 @@ export function FoodCard({
           <p className="text-center text-sm font-medium text-foreground bg-muted/60 rounded-xl px-4 py-3">
             {analysis.quickSummary}
           </p>
+        )}
+
+        {/* Beneficial highlights */}
+        {analysis.beneficialAspects && analysis.beneficialAspects.length > 0 && (
+          <div className="rounded-xl border border-success/40 bg-success/10 p-3">
+            <p className="text-xs font-bold text-success mb-2">✅ Good for you</p>
+            <div className="flex flex-wrap gap-1.5">
+              {analysis.beneficialAspects.map((b) => (
+                <span key={b} className="rounded-full bg-success/15 border border-success/30 px-2.5 py-1 text-xs font-medium text-success">
+                  {b}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Harmful / concerns */}
+        {(analysis.harmfulAdditives.length > 0 || (analysis.healthConcerns && analysis.healthConcerns.length > 0)) && (
+          <div className="rounded-xl border border-destructive/40 bg-destructive/10 p-3">
+            <p className="text-xs font-bold text-destructive mb-2">⚠️ Watch out</p>
+            <div className="space-y-1">
+              {analysis.harmfulAdditives.slice(0, 4).map((h) => (
+                <p key={h} className="text-xs text-destructive/90">• {h}</p>
+              ))}
+              {analysis.healthConcerns?.slice(0, 3).map((c) => (
+                <p key={c} className="text-xs text-destructive/80">• {c}</p>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {analysis.cookingMethods && analysis.cookingMethods.length > 0 && (
+          <div className="flex flex-wrap gap-1.5">
+            {analysis.cookingMethods.map((m) => (
+              <span key={m} className="rounded-full bg-muted px-2.5 py-1 text-xs font-medium capitalize">
+                🍳 {m}
+              </span>
+            ))}
+          </div>
+        )}
+
+        {/* Detected items from photo */}
+        {analysis.detectedItems && analysis.detectedItems.length > 0 && (
+          <div className="rounded-xl bg-primary/5 border border-primary/20 p-3">
+            <p className="text-xs font-semibold text-primary mb-2">Detected in photo</p>
+            <div className="flex flex-wrap gap-1.5">
+              {analysis.detectedItems.map((item) => (
+                <span key={item} className="rounded-full bg-background border border-primary/30 px-2.5 py-1 text-xs font-medium capitalize">
+                  {item}
+                </span>
+              ))}
+            </div>
+            {analysis.portionDescription && (
+              <p className="text-xs text-muted-foreground mt-2">{analysis.portionDescription}</p>
+            )}
+          </div>
         )}
 
         {/* Visual tag chips — max 4 */}
@@ -219,16 +295,37 @@ export function FoodCard({
                 {analysis.allergens.map((a) => <Badge key={a} variant="destructive">{a}</Badge>)}
               </div>
             )}
-            {analysis.ingredients && analysis.ingredients.length > 0 && (
-              <div className="flex flex-wrap gap-1">
-                {analysis.ingredients.slice(0, 12).map((ing, i) => (
-                  <span key={i} className="rounded-md bg-muted px-2 py-0.5 text-xs">{ing}</span>
+        {analysis.ingredients && analysis.ingredients.length > 0 && (
+          <div>
+            <p className="text-xs font-semibold mb-1.5">All ingredients ({analysis.ingredients.length})</p>
+            <div className="flex flex-wrap gap-1">
+              {analysis.ingredients.map((ing, i) => {
+                    const kind = classifyIngredient(ing);
+                    const cls = kind === 'harmful'
+                      ? 'bg-destructive/15 border-destructive/40 text-destructive'
+                      : kind === 'beneficial'
+                        ? 'bg-success/15 border-success/40 text-success'
+                        : 'bg-muted border-border text-foreground';
+                    return (
+                      <span key={i} className={`rounded-md border px-2 py-0.5 text-xs ${cls}`}>
+                        {ing}
+                      </span>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+            {analysis.whyLimit && analysis.whyLimit.length > 0 && (
+              <div className="space-y-1">
+                <p className="text-xs font-semibold">Why limit portions</p>
+                {analysis.whyLimit.map((w, i) => (
+                  <p key={i} className="text-xs text-muted-foreground">• {w}</p>
                 ))}
               </div>
             )}
-            {analysis.healthConcerns?.map((c, i) => (
-              <p key={i} className="text-xs text-muted-foreground">• {c}</p>
-            ))}
+            {analysis.recommendation && (
+              <p className="text-xs text-muted-foreground italic">{analysis.recommendation}</p>
+            )}
           </div>
         )}
 
@@ -252,8 +349,27 @@ export function FoodCard({
                 <HeartPulse className="h-5 w-5 text-primary" />
                 <h4 className="font-semibold">How did you feel after eating?</h4>
               </div>
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  variant={liked === true ? 'default' : 'outline'}
+                  className="gap-1"
+                  onClick={() => { setLiked(true); setSymptoms([]); }}
+                >
+                  <ThumbsUp className="h-3 w-3" /> Loved it
+                </Button>
+                <Button
+                  size="sm"
+                  variant={liked === false ? 'destructive' : 'outline'}
+                  className="gap-1"
+                  onClick={() => { setLiked(false); setSymptoms([]); }}
+                >
+                  <ThumbsDown className="h-3 w-3" /> Didn&apos;t like
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">Any symptoms? (tap if any)</p>
               <div className="flex flex-wrap gap-2">
-                {SYMPTOM_OPTIONS.map((s) => (
+                {SYMPTOM_OPTIONS.filter((s) => s.id !== 'none').map((s) => (
                   <button
                     key={s.id}
                     onClick={() => toggleSymptom(s.id)}

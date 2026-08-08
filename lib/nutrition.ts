@@ -108,6 +108,12 @@ export interface FoodAnalysis {
   dietAlerts?: DietAlert[];
   quickSummary?: string;
   highlightTags?: string[];
+  detectedItems?: string[];
+  portionDescription?: string;
+  cuisine?: string;
+  cookingMethods?: string[];
+  benefits?: string[];
+  beneficialAspects?: string[];
 }
 
 export interface DietAlert {
@@ -151,6 +157,67 @@ const PROCESSED_INGREDIENTS: Record<string, string> = {
   'emulsifier': 'Processed additive — indicates highly manufactured food',
   'flavor enhancer': 'Chemical additive to boost taste — often MSG-based',
 };
+
+const BENEFICIAL_INGREDIENTS: Record<string, string> = {
+  'whole grain': 'Whole grains — steady energy and fiber',
+  'whole wheat': 'Whole wheat — more fiber than refined flour',
+  'oat': 'Oats — heart-healthy fiber',
+  'oats': 'Oats — heart-healthy fiber',
+  'almond': 'Almonds — healthy fats and vitamin E',
+  'walnut': 'Walnuts — omega-3 fatty acids',
+  'peanut': 'Peanuts — protein and healthy fats',
+  'vegetable': 'Vegetables — vitamins and fiber',
+  'spinach': 'Spinach — iron and folate',
+  'broccoli': 'Broccoli — vitamin C and fiber',
+  'tomato': 'Tomatoes — lycopene antioxidant',
+  'lentil': 'Lentils — plant protein and fiber',
+  'chickpea': 'Chickpeas — protein and fiber',
+  'bean': 'Beans — plant protein and fiber',
+  'quinoa': 'Quinoa — complete plant protein',
+  'tofu': 'Tofu — lean plant protein',
+  'yogurt': 'Yogurt — probiotics and calcium',
+  'milk': 'Milk — calcium and protein',
+  'egg': 'Eggs — complete protein',
+  'chicken': 'Chicken — lean protein',
+  'fish': 'Fish — omega-3 and lean protein',
+  'salmon': 'Salmon — omega-3 fatty acids',
+  'olive oil': 'Olive oil — heart-healthy monounsaturated fat',
+  'honey': 'Honey — natural sweetener (use in moderation)',
+  'cocoa': 'Cocoa — antioxidants (watch sugar)',
+  'dark chocolate': 'Dark chocolate — antioxidants in moderation',
+  'fiber': 'Added fiber — supports digestion',
+  'protein': 'Added protein — muscle support',
+  'vitamin': 'Added vitamins — nutritional boost',
+  'mineral': 'Added minerals — nutritional support',
+  'seed': 'Seeds — healthy fats and minerals',
+  'flax': 'Flax — omega-3 and fiber',
+  'chia': 'Chia seeds — omega-3 and fiber',
+};
+
+export function checkBeneficialIngredients(ingredients: string[]): string[] {
+  const found: string[] = [];
+  const lower = ingredients.map((i) => i.toLowerCase());
+  for (const [key, label] of Object.entries(BENEFICIAL_INGREDIENTS)) {
+    if (lower.some((i) => i.includes(key))) {
+      found.push(label);
+    }
+  }
+  return found.slice(0, 6);
+}
+
+export function classifyIngredient(ingredient: string): 'harmful' | 'beneficial' | 'neutral' {
+  const lower = ingredient.toLowerCase();
+  for (const key of Object.keys(HARMFUL_ADDITIVES)) {
+    if (lower.includes(key)) return 'harmful';
+  }
+  for (const key of Object.keys(PROCESSED_INGREDIENTS)) {
+    if (lower.includes(key)) return 'harmful';
+  }
+  for (const key of Object.keys(BENEFICIAL_INGREDIENTS)) {
+    if (lower.includes(key)) return 'beneficial';
+  }
+  return 'neutral';
+}
 
 const JUNK_FOOD_KEYWORDS = [
   'chip', 'crisp', 'candy', 'chocolate', 'soda', 'cola', 'pepsi', 'instant noodle',
@@ -225,13 +292,14 @@ export function checkDietAlerts(
 
 function buildHighlightTags(analysis: Partial<FoodAnalysis>): string[] {
   const tags: string[] = [];
+  if (analysis.beneficialAspects?.length) tags.push('✅ Good nutrients');
   if (analysis.isJunkFood) tags.push('🍟 Junk food');
   if (analysis.dietAlerts?.length) tags.push('⚠️ Not veg-friendly');
   if (analysis.allergens?.length) tags.push('🚫 Allergen');
   if (analysis.harmfulAdditives?.length || (analysis.healthConcerns?.length ?? 0) > 0) tags.push('⚗️ Additives');
   if (analysis.facts && analysis.facts.fat >= 20) tags.push('🔴 High fat');
   if (analysis.facts && analysis.facts.calories >= 400) tags.push('🔥 High calorie');
-  return tags.slice(0, 4);
+  return tags.slice(0, 5);
 }
 
 function buildQuickSummary(analysis: FoodAnalysis, profile: UserProfile): string {
@@ -331,6 +399,7 @@ export function analyzePackagedFood(
 ): FoodAnalysis {
   const base = analyzeFood(name, facts, profile, ingredients);
   const processedConcerns = checkProcessedIngredients(ingredients);
+  const beneficial = checkBeneficialIngredients(ingredients);
   const isJunk = detectJunkFood(name, ingredients, facts, options?.categories);
   const healthConcerns: string[] = [...base.harmfulAdditives, ...processedConcerns];
   const whyLimit: string[] = [];
@@ -379,6 +448,7 @@ export function analyzePackagedFood(
   }
 
   base.healthConcerns = healthConcerns;
+  base.beneficialAspects = beneficial;
   base.whyLimit = whyLimit;
   base.portionAdvice = getPortionAdvice(facts, targets, isJunk, options?.servingLabel);
   base.servingLabel = options?.servingLabel;
@@ -474,6 +544,11 @@ export interface LoggedMeal {
   mealType: 'breakfast' | 'lunch' | 'dinner' | 'snack';
   warnings: string[];
   ingredients?: string[];
+  beneficialAspects?: string[];
+  harmfulAdditives?: string[];
+  healthConcerns?: string[];
+  isJunkFood?: boolean;
+  portionAdvice?: string;
   feedback?: MealFeedback;
 }
 
@@ -496,6 +571,7 @@ export interface MealFeedback {
   submittedAt: string;
   suspectedAllergy?: boolean;
   suspectedFoodPoisoning?: boolean;
+  liked?: boolean;
 }
 
 export interface DailySummary {
@@ -640,4 +716,99 @@ export function getDailyRecommendations(
     recs.push('Great balance so far — keep logging meals to stay on track!');
   }
   return recs;
+}
+
+export function isMealLiked(feedback?: MealFeedback): boolean {
+  if (!feedback) return false;
+  if (feedback.liked === true) return true;
+  if (feedback.liked === false) return false;
+  return feedback.symptoms.length === 1 && feedback.symptoms[0] === 'none';
+}
+
+export function getLikedMealRecommendations(
+  meals: LoggedMeal[],
+  profile: UserProfile,
+  targets: NutritionTargets,
+): string[] {
+  const liked = meals.filter((m) => isMealLiked(m.feedback));
+  if (liked.length === 0) return [];
+
+  const recs: string[] = [];
+  const recent = liked.slice(0, 5);
+  const names = recent.map((m) => m.foodName);
+
+  for (const meal of recent.slice(0, 2)) {
+    recs.push(`You enjoyed ${meal.foodName} — try it again or similar foods today.`);
+  }
+
+  const likedIngredients = new Set<string>();
+  for (const m of liked) {
+    (m.ingredients || []).forEach((i) => {
+      if (i.length > 2) likedIngredients.add(i.toLowerCase());
+    });
+  }
+
+  if (profile.dietType === 'vegetarian') {
+    if ([...likedIngredients].some((i) => i.includes('dal') || i.includes('lentil'))) {
+      recs.push('You liked lentil-based meals — dal or chole fits your taste and diet.');
+    }
+    if ([...likedIngredients].some((i) => i.includes('paneer') || i.includes('cheese'))) {
+      recs.push('You enjoyed paneer/cheese dishes — paneer curry is a good repeat choice.');
+    }
+  }
+
+  const avgCal = recent.reduce((s, m) => s + m.facts.calories, 0) / recent.length;
+  if (avgCal < targets.calories * 0.25) {
+    recs.push(`Your liked meals are lighter (~${Math.round(avgCal)} kcal) — good for your ${profile.goal} goal.`);
+  }
+
+  return recs.slice(0, 3);
+}
+
+export function getMealTimeSuggestion(
+  profile: UserProfile,
+  targets: NutritionTargets,
+  consumed: NutritionFacts,
+  hour: number = new Date().getHours(),
+): { mealType: string; message: string; suggestion: string } | null {
+  const remCal = targets.calories - consumed.calories;
+  const isVeg = profile.dietType === 'vegetarian';
+
+  if (hour >= 7 && hour < 10) {
+    return {
+      mealType: 'breakfast',
+      message: '🌅 Breakfast time — fuel your morning!',
+      suggestion: remCal > 400
+        ? (isVeg ? 'Try oats, idli, or paratha with dal.' : 'Try eggs, oats, or a protein-rich breakfast.')
+        : 'Light breakfast — fruit and yogurt keeps you on budget.',
+    };
+  }
+  if (hour >= 12 && hour < 14) {
+    return {
+      mealType: 'lunch',
+      message: '☀️ Lunch time — don\'t skip your midday meal!',
+      suggestion: remCal > 500
+        ? (isVeg ? 'Dal-rice, chole, or a veg thali fits your plan.' : 'Dal-rice, chicken curry, or biryani fits your calories.')
+        : 'Go lighter — salad, soup, or grilled veggies.',
+    };
+  }
+  if (hour >= 18 && hour < 21) {
+    return {
+      mealType: 'dinner',
+      message: '🌙 Dinner time — time to eat!',
+      suggestion: profile.medicalConditions.includes('diabetes')
+        ? 'Prefer low-sugar: dal, sabzi, roti, or grilled protein.'
+        : remCal > 400
+          ? (isVeg ? 'Veg curry with roti or rice — balanced dinner.' : 'Grilled chicken, dal-rice, or light curry.')
+          : 'Light dinner — soup, salad, or steamed veggies.',
+    };
+  }
+  if (hour >= 15 && hour < 17) {
+    return {
+      mealType: 'snack',
+      message: '🍎 Snack time — small bite to avoid long gaps.',
+      suggestion: remCal > 300 ? 'Nuts, fruit, or yogurt.' : 'Skip heavy snacks — you\'re near your calorie limit.',
+    };
+  }
+  return null;
 }
