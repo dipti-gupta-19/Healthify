@@ -27,7 +27,7 @@ const FOOD_VISION_PROMPT = `You are an expert nutritionist analyzing a food phot
 Identify the dish from ANY cuisine worldwide. List EVERY visible item and ingredient on the plate.
 Estimate nutrition for the TOTAL portion shown in the image (sum all items).
 
-Return ONLY valid JSON:
+Return a single JSON object only — no markdown fences, no commentary.
 {
   "name": "specific dish name e.g. North Indian Veg Thali with dal, puri, rice and sabzi",
   "cuisine": "Indian",

@@ -149,7 +149,8 @@ export default function UnpackagedScanPage() {
       const dataUrl = await compressImage(file, 800);
       setImagePreview(dataUrl);
       setImageBase64(dataUrl);
-      setMimeType('image/jpeg');
+      const mimeMatch = dataUrl.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,/i);
+      setMimeType(mimeMatch?.[1] === 'image/jpg' ? 'image/jpeg' : (mimeMatch?.[1] || 'image/jpeg'));
       toast.success('Photo ready — tap "Scan & Analyze" below');
     } catch {
       toast.error('Failed to process image');

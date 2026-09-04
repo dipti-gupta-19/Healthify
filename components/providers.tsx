@@ -3,6 +3,7 @@
 import { ProfileProvider } from '@/components/profile-context';
 import { Navbar } from '@/components/navbar';
 import { Toaster } from '@/components/ui/sonner';
+import { ChatWidget } from '@/components/chat-widget';
 
 export function AppProviders({ children }: { children: React.ReactNode }) {
   return (
@@ -10,6 +11,8 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
       <Navbar />
       <main className="min-h-[calc(100vh-64px)]">{children}</main>
       <Toaster richColors position="top-center" />
+      <ChatWidget />
     </ProfileProvider>
   );
 }
+
