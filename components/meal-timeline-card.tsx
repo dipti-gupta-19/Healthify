@@ -8,6 +8,7 @@ import { HeartPulse, ChevronDown, Trash2, Loader2, ThumbsUp, ThumbsDown } from '
 import type { LoggedMeal, FeedbackSymptom } from '@/lib/nutrition';
 import { classifyIngredient, isMealLiked } from '@/lib/nutrition';
 import { toast } from 'sonner';
+import { mealId } from '@/lib/meal-history';
 
 const SYMPTOM_OPTIONS: { id: FeedbackSymptom; label: string }[] = [
   { id: 'nausea', label: 'Nausea' },
@@ -64,7 +65,7 @@ export function MealTimelineCard({
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-user-id': 'demo-user' },
         body: JSON.stringify({
-          mealId: meal._id,
+          mealId: mealId(meal),
           symptoms: finalSymptoms,
           severity,
           liked: isLiked && finalSymptoms[0] === 'none',
@@ -121,7 +122,7 @@ export function MealTimelineCard({
             <ChevronDown className={`h-4 w-4 transition ${expanded ? 'rotate-180' : ''}`} />
           </button>
           <button
-            onClick={() => onDelete(meal._id as string)}
+            onClick={() => onDelete(mealId(meal))}
             className="rounded-lg p-2 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
             aria-label="Delete"
           >

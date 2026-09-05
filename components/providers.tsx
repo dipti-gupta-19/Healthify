@@ -10,7 +10,7 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
     <ProfileProvider>
       <Navbar />
       <main className="min-h-[calc(100vh-64px)]">{children}</main>
-      <Toaster richColors position="top-center" />
+      <Toaster richColors position="top-center" closeButton duration={4500} />
       <ChatWidget />
     </ProfileProvider>
   );

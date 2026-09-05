@@ -17,25 +17,7 @@ import {
 import { MealTimelineCard } from '@/components/meal-timeline-card';
 import { MealTimeNotifier } from '@/components/meal-time-notifier';
 import { toast } from 'sonner';
-
-const MEALS_CACHE_KEY = 'healthify-meals-cache';
-
-function readMealsCache(): LoggedMeal[] | null {
-  try {
-    const raw = sessionStorage.getItem(MEALS_CACHE_KEY);
-    return raw ? JSON.parse(raw) as LoggedMeal[] : null;
-  } catch {
-    return null;
-  }
-}
-
-function cacheMeals(meals: LoggedMeal[]) {
-  try {
-    sessionStorage.setItem(MEALS_CACHE_KEY, JSON.stringify(meals));
-  } catch {
-    // ignore quota
-  }
-}
+import { mealId, mergeMeals, readLocalMeals, removeLocalMeal, writeLocalMeals } from '@/lib/meal-history';
 
 function groupMealsByDate(meals: LoggedMeal[]): { date: string; label: string; meals: LoggedMeal[] }[] {
   const groups: Record<string, LoggedMeal[]> = {};
@@ -57,18 +39,19 @@ function groupMealsByDate(meals: LoggedMeal[]): { date: string; label: string; m
 
 export default function DashboardPage() {
   const { profile, targets, loading } = useProfile();
-  const [meals, setMeals] = useState<LoggedMeal[]>(readMealsCache() || []);
-  const [mealsLoading, setMealsLoading] = useState(!readMealsCache());
+  const [meals, setMeals] = useState<LoggedMeal[]>(() => readLocalMeals());
+  const [mealsLoading, setMealsLoading] = useState(() => readLocalMeals().length === 0);
 
   const loadMeals = useCallback(async () => {
+    const local = readLocalMeals();
     try {
       const res = await fetch('/api/meals', { headers: { 'x-user-id': 'demo-user' } });
       const data = await res.json();
-      const list = data.meals || [];
+      const list = mergeMeals(data.meals || [], local);
       setMeals(list);
-      cacheMeals(list);
+      writeLocalMeals(list);
     } catch {
-      // keep cache
+      setMeals(local);
     } finally {
       setMealsLoading(false);
     }
@@ -76,6 +59,16 @@ export default function DashboardPage() {
 
   useEffect(() => {
     loadMeals();
+  }, [loadMeals]);
+
+  useEffect(() => {
+    const onFocus = () => { loadMeals(); };
+    window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onFocus);
+    return () => {
+      window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onFocus);
+    };
   }, [loadMeals]);
 
   const todayStr = new Date().toDateString();
@@ -105,12 +98,17 @@ export default function DashboardPage() {
   };
 
   const deleteMeal = async (id: string) => {
-    await fetch(`/api/meals?id=${id}`, { method: 'DELETE', headers: { 'x-user-id': 'demo-user' } });
-    await loadMeals();
+    removeLocalMeal(id);
+    setMeals((prev) => prev.filter((m) => mealId(m) !== id));
+    try {
+      await fetch(`/api/meals?id=${id}`, { method: 'DELETE', headers: { 'x-user-id': 'demo-user' } });
+    } catch {
+      // local history already updated
+    }
     toast.success('Meal removed');
   };
 
-  const timelineGroups = groupMealsByDate(meals.slice(0, 50));
+  const timelineGroups = groupMealsByDate(meals);
 
   if (loading && !profile) {
     return <div className="flex items-center justify-center py-24 text-muted-foreground">Loading...</div>;
@@ -216,8 +214,11 @@ export default function DashboardPage() {
       )}
 
       <div className="mb-4 flex items-center justify-between">
-        <h2 className="text-xl font-bold">Nutrition Timeline</h2>
-        <span className="text-xs text-muted-foreground">Tap a meal to see full details & give feedback</span>
+        <div>
+          <h2 className="text-xl font-bold">Nutrition Timeline</h2>
+          <p className="text-xs text-muted-foreground">Your meal history — every food you log shows up here</p>
+        </div>
+        <span className="text-xs text-muted-foreground">{meals.length} logged</span>
       </div>
 
       {mealsLoading && meals.length === 0 ? (
@@ -239,7 +240,7 @@ export default function DashboardPage() {
               <div className="space-y-3">
                 {group.meals.map((meal) => (
                   <MealTimelineCard
-                    key={meal._id as string}
+                    key={mealId(meal) || `${meal.foodName}-${meal.loggedAt}`}
                     meal={meal}
                     onDelete={deleteMeal}
                     onFeedbackSubmitted={loadMeals}
