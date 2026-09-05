@@ -167,7 +167,9 @@ export async function POST(req: Request) {
 
     if (identifiedBy === 'ai') {
       const methodNote = cookingMethods.length ? ` Cooked: ${cookingMethods.join(', ')}.` : '';
-      analysis.recommendation = `AI identified from your photo: "${resolvedName}"${cuisine ? ` (${cuisine})` : ''}.${methodNote} Nutrition estimated for the portion shown.`;
+      const sourceLabel = imageBase64 ? 'from your photo' : 'from your meal description';
+      const portionNote = portionDescription ? ` Portion: ${portionDescription}.` : ' Nutrition calculated for your portion.';
+      analysis.recommendation = `AI analyzed ${sourceLabel}: "${resolvedName}"${cuisine ? ` (${cuisine})` : ''}.${methodNote}${portionNote}`;
       if (analysis.verdict === 'great' || analysis.verdict === 'good') {
         analysis.quickSummary = analysis.quickSummary || 'Good fit for your plan — enjoy this portion.';
       } else if (analysis.verdict === 'poor') {

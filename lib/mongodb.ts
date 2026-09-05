@@ -2,17 +2,16 @@ import { MongoClient, Db, ObjectId } from 'mongodb';
 
 export { ObjectId };
 
-const uri = process.env.MONGODB_URI as string;
-const dbName = process.env.MONGODB_DB || 'healthify';
-
 let cachedClient: MongoClient | null = null;
 let cachedDb: Db | null = null;
 let connecting = false;
 
 export async function getDb(): Promise<Db> {
-  if (!process.env.MONGODB_URI) {
+  const uri = process.env.MONGODB_URI;
+  if (!uri) {
     throw new Error('MONGODB_URI environment variable is not set');
   }
+  const dbName = process.env.MONGODB_DB || 'healthify';
   if (cachedClient && cachedDb) {
     return cachedDb;
   }

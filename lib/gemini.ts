@@ -127,19 +127,28 @@ async function resolveModelCandidates(apiKey: string, preferred?: string[]): Pro
 async function geminiGenerateParts(
   apiKey: string,
   parts: Part[],
-  options?: { jsonMode?: boolean; models?: string[] },
+  options?: { jsonMode?: boolean; models?: string[]; maxOutputTokens?: number; temperature?: number },
 ): Promise<GeminiResult> {
   if (Date.now() < quotaBlockedUntil) {
     return { error: toUserFriendlyError('429 quota cooldown active') };
   }
 
   const candidates = await resolveModelCandidates(apiKey, options?.models);
+  const generationConfig: Record<string, unknown> = {};
+  if (options?.jsonMode !== false) {
+    generationConfig.responseMimeType = 'application/json';
+  }
+  if (options?.maxOutputTokens) {
+    generationConfig.maxOutputTokens = options.maxOutputTokens;
+  }
+  if (options?.temperature !== undefined) {
+    generationConfig.temperature = options.temperature;
+  }
+
   const bodyBase: Record<string, unknown> = {
     contents: [{ parts }],
+    ...(Object.keys(generationConfig).length ? { generationConfig } : {}),
   };
-  if (options?.jsonMode !== false) {
-    bodyBase.generationConfig = { responseMimeType: 'application/json' };
-  }
 
   let lastMeaningfulError = '';
   let notFoundCount = 0;
@@ -185,10 +194,17 @@ async function geminiGenerateParts(
       }
 
       const data = await res.json();
-      const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (text) {
+      const rawParts = data?.candidates?.[0]?.content?.parts;
+      let text = '';
+      if (Array.isArray(rawParts)) {
+        const textParts = rawParts.filter((p: { thought?: boolean; text?: string }) => !p.thought && typeof p.text === 'string');
+        text = textParts.length > 0 ? textParts.map((p: { text: string }) => p.text).join('') : (rawParts[0]?.text || '');
+      } else if (rawParts?.[0]?.text) {
+        text = rawParts[0].text;
+      }
+      if (text && text.trim()) {
         cachedWorkingModel = modelName;
-        return { text, model: modelName };
+        return { text: text.trim(), model: modelName };
       }
 
       const blockReason = data?.promptFeedback?.blockReason || data?.candidates?.[0]?.finishReason || '';
@@ -257,6 +273,26 @@ export async function geminiTextJson(
     if (parsed) return { parsed };
   }
   return { parsed: null, error: result.error };
+}
+
+export async function geminiText(
+  prompt: string,
+  options?: { models?: string[]; maxOutputTokens?: number; temperature?: number },
+): Promise<{ text: string | null; error?: string }> {
+  const apiKey = getApiKey();
+  if (!apiKey) return { text: null, error: 'GEMINI_API_KEY not set' };
+
+  const result = await geminiGenerateParts(apiKey, [{ text: prompt }], {
+    jsonMode: false,
+    models: options?.models,
+    maxOutputTokens: options?.maxOutputTokens,
+    temperature: options?.temperature,
+  });
+
+  if (result.text) {
+    return { text: result.text.trim() };
+  }
+  return { text: null, error: result.error };
 }
 
 export function hasGeminiKey(): boolean {

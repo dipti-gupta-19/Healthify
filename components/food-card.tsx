@@ -9,6 +9,7 @@ import { CheckCircle2, XCircle, MinusCircle, Plus, Loader2, HeartPulse, ChevronD
 import { useProfile } from '@/components/profile-context';
 import type { FoodAnalysis, UserProfile, NutritionTargets, FeedbackSymptom } from '@/lib/nutrition';
 import { classifyIngredient } from '@/lib/nutrition';
+import { AskHealthify } from '@/components/ask-healthify';
 import { toast } from 'sonner';
 
 const VERDICT_CONFIG = {
@@ -328,6 +329,11 @@ export function FoodCard({
             )}
           </div>
         )}
+
+        {/* Ask Healthify Conversational Assistant */}
+        <div className="border-t pt-4">
+          <AskHealthify food={analysis} profile={profile} />
+        </div>
 
         {/* Log meal */}
         <div className="border-t pt-4 space-y-3">
