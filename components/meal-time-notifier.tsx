@@ -43,6 +43,7 @@ export function MealTimeNotifier({ consumedCalories }: { consumedCalories: numbe
       toast(suggestion.message, {
         description: suggestion.suggestion,
         duration: 8000,
+        closeButton: true,
         action: {
           label: 'Scan food',
           onClick: () => { window.location.href = '/scan/unpackaged'; },

@@ -1,14 +1,14 @@
 import type { Part } from '@google/generative-ai';
 
-/** Tried in order — only advances to next on 404 (not on quota errors). */
+/** Vision-capable flash aliases that still accept generateContent for new AI Studio keys. */
 export const GEMINI_MODELS = [
-  'gemini-2.5-flash-lite',
-  'gemini-2.5-flash',
-  'gemini-1.5-flash-lite',
-  'gemini-1.5-flash',
-  'gemini-2.0-flash',
-  'gemini-2.0-flash-lite',
+  'gemini-flash-lite-latest',
   'gemini-flash-latest',
+  'gemini-3.5-flash-lite',
+  'gemini-3.5-flash',
+  'gemini-3.6-flash',
+  'gemini-3.8-flash',
+  'gemini-3.1-flash-lite',
 ];
 
 let quotaBlockedUntil = 0;
@@ -16,6 +16,17 @@ let cachedWorkingModel: string | null = null;
 
 export function parseJsonFromText(text: string): Record<string, unknown> | null {
   const cleaned = text.replace(/```json\s*/g, '').replace(/```/g, '').trim();
+  try {
+    const parsed = JSON.parse(cleaned);
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      return parsed as Record<string, unknown>;
+    }
+    if (Array.isArray(parsed) && parsed[0] && typeof parsed[0] === 'object') {
+      return parsed[0] as Record<string, unknown>;
+    }
+  } catch {
+    /* fall through to substring match */
+  }
   const match = cleaned.match(/\{[\s\S]*\}/);
   if (!match) return null;
   try {
@@ -37,21 +48,37 @@ export interface GeminiResult {
 }
 
 function isFlashModel(name: string): boolean {
-  const n = name.toLowerCase();
+  const n = name.replace(/^models\//, '').toLowerCase();
   if (!n.includes('flash')) return false;
-  if (n.includes('tts') || n.includes('live') || n.includes('audio') || n.includes('preview-tts')) return false;
-  if (n.includes('embedding') || n.includes('image-generation') || n.includes('aqa')) return false;
-  if (n.includes('robotics') || n.includes('computer-use')) return false;
+  if (/(tts|live|audio|embedding|aqa|robotics|computer-use|omni)/.test(n)) return false;
+  // Image-generation models (gemini-*-flash-image) share a tiny quota and 429 the whole scan.
+  if (n.includes('image')) return false;
+  if (n.includes('exp') || n.includes('high-res')) return false;
+  // Retired for new AI Studio keys — ListModels still returns them, generateContent 404s.
+  if (/^gemini-1\.5/.test(n) || /^gemini-2\.0/.test(n) || /^gemini-2\.5-flash/.test(n)) return false;
   return true;
 }
 
 function modelPriority(name: string): number {
   const n = name.toLowerCase();
-  if (n.includes('lite')) return 0;
-  if (n.includes('2.5')) return 1;
-  if (n.includes('2.0')) return 2;
-  if (n.includes('latest')) return 3;
+  if (n.includes('lite') && n.includes('latest')) return 0;
+  if (n.includes('latest')) return 1;
+  if (n.includes('lite')) return 2;
+  if (n.includes('3.5') || n.includes('3.6') || n.includes('3.8')) return 3;
   return 4;
+}
+
+function extractCandidateText(data: { candidates?: { content?: { parts?: { text?: string }[] } }[] }): string {
+  const parts = data?.candidates?.[0]?.content?.parts;
+  if (!Array.isArray(parts)) return '';
+  return parts.map((p) => p?.text).filter(Boolean).join('\n').trim();
+}
+
+function mimeFromDataUrl(imageBase64: string, fallback: string): string {
+  const match = imageBase64.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,/i);
+  let mime = (match?.[1] || fallback || 'image/jpeg').toLowerCase();
+  if (mime === 'image/jpg') mime = 'image/jpeg';
+  return mime;
 }
 
 function isQuotaError(raw: string): boolean {
@@ -77,7 +104,11 @@ function toUserFriendlyError(raw: string): string {
   if (lower.includes('block') || lower.includes('safety') || lower.includes('prohibited')) {
     return 'Image could not be analyzed (safety filter). Try a different photo.';
   }
-  if (lower.includes('invalid') && (lower.includes('image') || lower.includes('base64'))) {
+  if (
+    (lower.includes('invalid') && (lower.includes('image') || lower.includes('base64')))
+    || lower.includes('unable to process input image')
+    || lower.includes('image data is empty')
+  ) {
     return 'Invalid image data — re-upload the photo and try again.';
   }
   if (raw.includes('Could not parse AI response')) {
@@ -123,7 +154,7 @@ async function resolveModelCandidates(apiKey: string, preferred?: string[]): Pro
   return [...merged];
 }
 
-/** Tries models on 404 only; stops immediately on quota/auth errors. */
+/** Tries models on 404/503/empty; stops on auth errors. Vision-quota 429 still cooldowns. */
 async function geminiGenerateParts(
   apiKey: string,
   parts: Part[],
@@ -133,7 +164,9 @@ async function geminiGenerateParts(
     return { error: toUserFriendlyError('429 quota cooldown active') };
   }
 
-  const candidates = await resolveModelCandidates(apiKey, options?.models);
+  const candidates = (await resolveModelCandidates(apiKey, options?.models))
+    .filter(isFlashModel)
+    .slice(0, 8);
   const bodyBase: Record<string, unknown> = {
     contents: [{ parts }],
   };
@@ -162,7 +195,7 @@ async function geminiGenerateParts(
         if (res.status === 404) {
           notFoundCount++;
           lastMeaningfulError = raw;
-          continue; // try next model
+          continue;
         }
 
         lastMeaningfulError = raw;
@@ -185,7 +218,7 @@ async function geminiGenerateParts(
       }
 
       const data = await res.json();
-      const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+      const text = extractCandidateText(data);
       if (text) {
         cachedWorkingModel = modelName;
         return { text, model: modelName };
@@ -193,10 +226,14 @@ async function geminiGenerateParts(
 
       const blockReason = data?.promptFeedback?.blockReason || data?.candidates?.[0]?.finishReason || '';
       lastMeaningfulError = blockReason ? `blocked: ${blockReason}` : 'empty AI response';
-      break;
+      if (process.env.NODE_ENV === 'development') {
+        console.error('[gemini] empty/blocked on', modelName, lastMeaningfulError);
+      }
+      continue;
     } catch (e) {
       lastMeaningfulError = e instanceof Error ? e.message : 'Network error';
-      break;
+      if (process.env.NODE_ENV === 'development') console.error('[gemini]', lastMeaningfulError);
+      continue;
     }
   }
 
@@ -220,13 +257,14 @@ export async function geminiVisionJson(
   const apiKey = getApiKey();
   if (!apiKey) return { parsed: null, error: 'GEMINI_API_KEY not set in .env' };
 
-  const base64Data = imageBase64.replace(/^data:image\/\w+;base64,/, '');
+  const resolvedMime = mimeFromDataUrl(imageBase64, mimeType);
+  const base64Data = imageBase64.replace(/^data:image\/[a-zA-Z0-9.+-]+;base64,/i, '');
   if (!base64Data || base64Data.length < 100) {
     return { parsed: null, error: 'Image data is empty or too small — re-upload the photo.' };
   }
 
   const parts: Part[] = [
-    { inlineData: { mimeType: mimeType || 'image/jpeg', data: base64Data } },
+    { inlineData: { mimeType: resolvedMime || 'image/jpeg', data: base64Data } },
     { text: prompt },
   ];
 
@@ -268,4 +306,14 @@ export function getGeminiKeyHint(): string {
     return 'Add GEMINI_API_KEY to your .env file (free at https://aistudio.google.com/apikey)';
   }
   return '';
+}
+
+/**
+ * Lightweight plain-text Gemini call — no JSON schema, low token budget.
+ * Used by the chat assistant route to get conversational answers fast.
+ */
+export async function geminiTextPlain(prompt: string): Promise<GeminiResult> {
+  const apiKey = getApiKey();
+  if (!apiKey) return { error: 'GEMINI_API_KEY not set' };
+  return geminiGenerateParts(apiKey, [{ text: prompt }], { jsonMode: false });
 }

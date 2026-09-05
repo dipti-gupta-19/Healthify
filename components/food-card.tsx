@@ -8,8 +8,9 @@ import { Badge } from '@/components/ui/badge';
 import { CheckCircle2, XCircle, MinusCircle, Plus, Loader2, HeartPulse, ChevronDown, ThumbsUp, ThumbsDown } from 'lucide-react';
 import { useProfile } from '@/components/profile-context';
 import type { FoodAnalysis, UserProfile, NutritionTargets, FeedbackSymptom } from '@/lib/nutrition';
-import { classifyIngredient } from '@/lib/nutrition';
+import { classifyIngredient, getMealType } from '@/lib/nutrition';
 import { toast } from 'sonner';
+import { appendLocalMeal } from '@/lib/meal-history';
 
 const VERDICT_CONFIG = {
   great: { label: 'Great Choice', icon: CheckCircle2, color: 'text-success', bg: 'bg-success/10', border: 'border-success/30' },
@@ -63,35 +64,67 @@ export function FoodCard({
   const handleLog = async () => {
     if (!addToMeal) return;
     setLogging(true);
+    const loggedAt = new Date().toISOString();
+    const mealType = getMealType(new Date().getHours());
+    const localMeal = {
+      foodName: analysis.name,
+      emoji: analysis.emoji,
+      facts: analysis.facts,
+      verdict: analysis.verdict,
+      warnings: analysis.warnings,
+      ingredients: analysis.ingredients || [],
+      beneficialAspects: analysis.beneficialAspects || [],
+      harmfulAdditives: analysis.harmfulAdditives || [],
+      healthConcerns: analysis.healthConcerns || [],
+      isJunkFood: analysis.isJunkFood || false,
+      portionAdvice: analysis.portionAdvice || undefined,
+      loggedAt,
+      mealType,
+      userId: 'demo-user',
+    };
     try {
       const res = await fetch('/api/meals', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-user-id': 'demo-user' },
-        body: JSON.stringify({
-          foodName: analysis.name,
-          emoji: analysis.emoji,
-          facts: analysis.facts,
-          verdict: analysis.verdict,
-          warnings: analysis.warnings,
-          ingredients: analysis.ingredients || [],
-          beneficialAspects: analysis.beneficialAspects || [],
-          harmfulAdditives: analysis.harmfulAdditives || [],
-          healthConcerns: analysis.healthConcerns || [],
-          isJunkFood: analysis.isJunkFood || false,
-          portionAdvice: analysis.portionAdvice || undefined,
-        }),
+        body: JSON.stringify(localMeal),
       });
       const data = await res.json();
+      const id = typeof data._id === 'string' ? data._id : crypto.randomUUID();
       if (res.ok) {
+        appendLocalMeal({ ...localMeal, _id: id });
         setLogged(true);
-        setMealId(data._id);
+        setMealId(id);
         setShowFeedback(true);
-        toast.success(`${analysis.name} added to your meals!`);
+        toast.success(`${analysis.name} added to your meals`, {
+          description: 'It now appears in Dashboard → Nutrition Timeline',
+          duration: 6000,
+          action: {
+            label: 'View timeline',
+            onClick: () => onLogged?.(),
+          },
+        });
       } else {
-        toast.error(data.error || 'Failed to log meal');
+        appendLocalMeal({ ...localMeal, _id: crypto.randomUUID() });
+        setLogged(true);
+        setShowFeedback(false);
+        toast.error(data.error || 'Cloud save failed — meal kept in your local history', {
+          duration: 8000,
+          action: {
+            label: 'View timeline',
+            onClick: () => onLogged?.(),
+          },
+        });
       }
     } catch {
-      toast.error('Failed to log meal');
+      appendLocalMeal({ ...localMeal, _id: crypto.randomUUID() });
+      setLogged(true);
+      toast.error('Cloud save failed — meal kept in your local history', {
+        duration: 8000,
+        action: {
+          label: 'View timeline',
+          onClick: () => onLogged?.(),
+        },
+      });
     } finally {
       setLogging(false);
     }
