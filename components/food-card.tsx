@@ -43,7 +43,7 @@ export function FoodCard({
   targets: NutritionTargets | null;
   onLogged?: () => void;
 }) {
-  const { refresh } = useProfile();
+  const { refresh, token, user } = useProfile();
   const [addToMeal, setAddToMeal] = useState(false);
   const [logging, setLogging] = useState(false);
   const [logged, setLogged] = useState(false);
@@ -54,7 +54,6 @@ export function FoodCard({
   const [liked, setLiked] = useState<boolean | null>(null);
   const [feedbackNotes, setFeedbackNotes] = useState('');
   const [submittingFeedback, setSubmittingFeedback] = useState(false);
-  const [feedbackMessage, setFeedbackMessage] = useState('');
 
   const verdict = VERDICT_CONFIG[analysis.verdict];
   const VerdictIcon = verdict.icon;
@@ -80,12 +79,16 @@ export function FoodCard({
       portionAdvice: analysis.portionAdvice || undefined,
       loggedAt,
       mealType,
-      userId: 'demo-user',
+      userId: user?.userId || 'demo-user',
     };
     try {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+      else headers['x-user-id'] = user?.userId || 'demo-user';
+
       const res = await fetch('/api/meals', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-user-id': 'demo-user' },
+        headers,
         body: JSON.stringify(localMeal),
       });
       const data = await res.json();
@@ -154,9 +157,13 @@ export function FoodCard({
       const isLiked = liked === true || (liked === null && symptoms.length === 0);
       const finalSymptoms: FeedbackSymptom[] = symptoms.length ? symptoms : ['none'];
 
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+      else headers['x-user-id'] = user?.userId || 'demo-user';
+
       const res = await fetch('/api/meals/feedback', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-user-id': 'demo-user' },
+        headers,
         body: JSON.stringify({
           mealId,
           symptoms: finalSymptoms,
@@ -167,7 +174,6 @@ export function FoodCard({
       });
       const data = await res.json();
       if (res.ok) {
-        setFeedbackMessage(data.message);
         if (data.suspectedAllergy) {
           toast.error('Possible allergic reaction — ingredient flagged.');
           await refresh();
@@ -328,11 +334,11 @@ export function FoodCard({
                 {analysis.allergens.map((a) => <Badge key={a} variant="destructive">{a}</Badge>)}
               </div>
             )}
-        {analysis.ingredients && analysis.ingredients.length > 0 && (
-          <div>
-            <p className="text-xs font-semibold mb-1.5">All ingredients ({analysis.ingredients.length})</p>
-            <div className="flex flex-wrap gap-1">
-              {analysis.ingredients.map((ing, i) => {
+            {analysis.ingredients && analysis.ingredients.length > 0 && (
+              <div>
+                <p className="text-xs font-semibold mb-1.5">All ingredients ({analysis.ingredients.length})</p>
+                <div className="flex flex-wrap gap-1">
+                  {analysis.ingredients.map((ing, i) => {
                     const kind = classifyIngredient(ing);
                     const cls = kind === 'harmful'
                       ? 'bg-destructive/15 border-destructive/40 text-destructive'

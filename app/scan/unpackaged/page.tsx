@@ -7,18 +7,19 @@ import { useProfile } from '@/components/profile-context';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Camera, Upload, Loader2, Mic, Sparkles, ScanSearch } from 'lucide-react';
+import { Camera, Upload, Loader2, Mic, Sparkles, ScanSearch, AlertCircle, Utensils } from 'lucide-react';
 import type { FoodAnalysis } from '@/lib/nutrition';
 import { calculateTargets } from '@/lib/nutrition';
+import { ScanAIAssistant } from '@/components/scan-ai-assistant';
 import { toast } from 'sonner';
 
 const FoodCard = dynamic(
   () => import('@/components/food-card').then((m) => m.FoodCard),
-  { loading: () => <div className="py-8 text-center text-muted-foreground">Loading results...</div> },
+  { loading: () => <div className="py-8 text-center text-sm font-medium text-muted-foreground">Loading analysis results...</div> },
 );
 
 export default function UnpackagedScanPage() {
-  const { profile, targets } = useProfile();
+  const { profile, targets, token } = useProfile();
   const router = useRouter();
   const [foodName, setFoodName] = useState('');
   const [analysis, setAnalysis] = useState<FoodAnalysis | null>(null);
@@ -49,24 +50,28 @@ export default function UnpackagedScanPage() {
     setError('');
     setAnalysis(null);
     try {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+      else headers['x-user-id'] = 'demo-user';
+
       const res = await fetch('/api/food/unpackaged', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-user-id': 'demo-user' },
+        headers,
         body: JSON.stringify({ profile, imageBase64: base64, mimeType: type }),
       });
       const data = await res.json();
       if (!res.ok) {
-        const errMsg = data.error || 'Failed to analyze food';
+        const errMsg = data.error || 'Failed to analyze food photo';
         setError(errMsg);
         if (/quota|rate limit/i.test(errMsg)) setScanCooldown(120);
-        toast.error('Could not analyze photo — check details below');
+        toast.error('Could not analyze photo — see details below');
       } else {
         setAnalysis(data.analysis);
         setFoodName(data.identifiedName || '');
         toast.success(`Identified: ${data.identifiedName}`);
       }
     } catch {
-      setError('Something went wrong. Try again.');
+      setError('Something went wrong. Please try again.');
       toast.error('Something went wrong');
     } finally {
       setLoading(false);
@@ -84,9 +89,13 @@ export default function UnpackagedScanPage() {
     setError('');
     setAnalysis(null);
     try {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+      else headers['x-user-id'] = 'demo-user';
+
       const res = await fetch('/api/food/unpackaged', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-user-id': 'demo-user' },
+        headers,
         body: JSON.stringify({ profile, foodName: query }),
       });
       const data = await res.json();
@@ -107,7 +116,7 @@ export default function UnpackagedScanPage() {
   const handleVoice = () => {
     const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SR) {
-      toast.error('Voice not supported');
+      toast.error('Voice recognition is not supported in this browser');
       return;
     }
     const rec = new SR();
@@ -126,11 +135,11 @@ export default function UnpackagedScanPage() {
 
   const handleScanPhoto = () => {
     if (scanCooldown > 0) {
-      toast.error(`Quota cooldown — wait ${scanCooldown}s before scanning again`);
+      toast.error(`Quota cooldown — please wait ${scanCooldown}s before scanning again`);
       return;
     }
     if (!imageBase64) {
-      toast.error('Upload a photo first');
+      toast.error('Please upload or take a photo first');
       return;
     }
     runPhotoAnalysis(imageBase64, mimeType);
@@ -151,7 +160,7 @@ export default function UnpackagedScanPage() {
       setImageBase64(dataUrl);
       const mimeMatch = dataUrl.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,/i);
       setMimeType(mimeMatch?.[1] === 'image/jpg' ? 'image/jpeg' : (mimeMatch?.[1] || 'image/jpeg'));
-      toast.success('Photo ready — tap "Scan & Analyze" below');
+      toast.success('Photo ready — click "Scan & Analyze Meal" below');
     } catch {
       toast.error('Failed to process image');
     } finally {
@@ -161,45 +170,62 @@ export default function UnpackagedScanPage() {
   };
 
   return (
-    <div className="mx-auto max-w-3xl px-3 sm:px-6 py-6 sm:py-8">
-      <div className="mb-6">
+    <div className="mx-auto max-w-7xl px-4 sm:px-8 py-8 animate-fade-in">
+      {/* HEADER HERO */}
+      <div className="mb-8">
         <div className="flex items-center gap-3 mb-2">
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-accent text-accent-foreground">
+          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-500 text-white shadow-md">
             <Camera className="h-6 w-6" />
           </div>
           <div>
-            <h1 className="text-2xl sm:text-3xl font-bold">Unpackaged Food Scanner</h1>
-            <p className="text-muted-foreground">Just upload a photo — AI names the dish, lists ingredients, and checks your profile.</p>
+            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">Unpackaged Food Scanner</h1>
+            <p className="text-sm text-muted-foreground mt-0.5">
+              Snap or upload a photo of any home-cooked dish or meal. AI identifies ingredients, estimates calories, and checks your daily budget.
+            </p>
           </div>
         </div>
       </div>
 
-      <Card className="p-6 mb-6 border-primary/30">
+      {/* UPLOAD & CAMERA CARD */}
+      <Card className="p-6 sm:p-8 mb-8 border-emerald-500/30 shadow-md glass-card max-w-4xl mx-auto">
         <div className="flex items-center gap-2 mb-4">
-          <Sparkles className="h-5 w-5 text-primary" />
-          <h2 className="text-lg font-semibold">Upload a Photo</h2>
+          <Sparkles className="h-5 w-5 text-emerald-500" />
+          <h2 className="text-lg font-bold">Meal Photo Recognition</h2>
         </div>
+
         {imagePreview && (
-          <div className="mb-4 rounded-xl overflow-hidden border border-border">
-            <img src={imagePreview} alt="Food preview" className="w-full max-h-72 object-cover" />
+          <div className="mb-6 rounded-2xl overflow-hidden border-2 border-emerald-500/30 max-h-80 shadow-md">
+            <img src={imagePreview} alt="Food photo preview" className="w-full h-full object-cover" />
           </div>
         )}
-        <div className="grid grid-cols-2 gap-3 mb-3">
+
+        <div className="grid grid-cols-2 gap-4 mb-5">
           <button
+            type="button"
             onClick={() => cameraInputRef.current?.click()}
             disabled={loading || imageProcessing}
-            className="flex flex-col items-center gap-2 rounded-xl border-2 border-dashed border-primary/40 p-6 transition hover:border-primary hover:bg-primary/5 disabled:opacity-50"
+            className="flex flex-col items-center gap-3 rounded-2xl border-2 border-dashed border-emerald-500/40 p-6 sm:p-8 transition hover:border-emerald-500 hover:bg-emerald-500/5 disabled:opacity-50"
           >
-            {imageProcessing ? <Loader2 className="h-8 w-8 text-primary animate-spin" /> : <Camera className="h-8 w-8 text-primary" />}
-            <span className="text-sm font-medium">Take Photo</span>
+            {imageProcessing ? (
+              <Loader2 className="h-10 w-10 text-emerald-500 animate-spin" />
+            ) : (
+              <Camera className="h-10 w-10 text-emerald-500" />
+            )}
+            <span className="text-sm font-bold">Take Meal Photo</span>
           </button>
+
           <button
+            type="button"
             onClick={() => fileInputRef.current?.click()}
             disabled={loading || imageProcessing}
-            className="flex flex-col items-center gap-2 rounded-xl border-2 border-dashed border-primary/40 p-6 transition hover:border-primary hover:bg-primary/5 disabled:opacity-50"
+            className="flex flex-col items-center gap-3 rounded-2xl border-2 border-dashed border-emerald-500/40 p-6 sm:p-8 transition hover:border-emerald-500 hover:bg-emerald-500/5 disabled:opacity-50"
           >
-            {imageProcessing ? <Loader2 className="h-8 w-8 text-primary animate-spin" /> : <Upload className="h-8 w-8 text-primary" />}
-            <span className="text-sm font-medium">Upload Image</span>
+            {imageProcessing ? (
+              <Loader2 className="h-10 w-10 text-emerald-500 animate-spin" />
+            ) : (
+              <Upload className="h-10 w-10 text-emerald-500" />
+            )}
+            <span className="text-sm font-bold">Upload Image</span>
           </button>
         </div>
 
@@ -207,89 +233,105 @@ export default function UnpackagedScanPage() {
           <Button
             onClick={handleScanPhoto}
             disabled={loading || imageProcessing || !imageBase64 || scanCooldown > 0}
-            className="w-full gap-2 mb-3"
-            size="lg"
+            className="w-full gap-2 h-12 text-base font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-md mb-4"
           >
             {loading ? (
               <>
                 <Loader2 className="h-5 w-5 animate-spin" />
-                Analyzing meal...
+                AI Analyzing Meal Photo...
               </>
             ) : scanCooldown > 0 ? (
               <>Wait {scanCooldown}s (quota cooldown)</>
             ) : (
               <>
                 <ScanSearch className="h-5 w-5" />
-                Scan & Analyze
+                Scan & Analyze Meal
               </>
             )}
           </Button>
         )}
 
-        <p className="text-xs text-muted-foreground">
-          Upload a photo, then tap Scan & Analyze — AI identifies the dish, ingredients, allergens, and your daily budget impact.
+        <p className="text-xs sm:text-sm text-muted-foreground text-center">
+          Our Vision AI identifies dish name, ingredient breakdown, portion size, and profile safety score.
         </p>
+
         <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" onChange={handleFile} className="hidden" />
         <input ref={fileInputRef} type="file" accept="image/*" onChange={handleFile} className="hidden" />
       </Card>
 
-      <button
-        type="button"
-        onClick={() => setShowOptionalInput(!showOptionalInput)}
-        className="text-xs text-muted-foreground hover:text-foreground mb-2"
-      >
-        {showOptionalInput ? 'Hide' : 'Optional: type dish name if photo fails'}
-      </button>
+      {/* OPTIONAL MANUAL DISH NAME INPUT */}
+      <div className="max-w-4xl mx-auto mb-8 text-center">
+        <button
+          type="button"
+          onClick={() => setShowOptionalInput(!showOptionalInput)}
+          className="text-xs sm:text-sm font-semibold text-primary hover:underline inline-flex items-center gap-1.5"
+        >
+          <Utensils className="h-4 w-4" />
+          {showOptionalInput ? 'Hide manual dish input' : 'Or search by dish name / voice'}
+        </button>
 
-      {showOptionalInput && (
-        <Card className="p-4 mb-6">
-          <div className="flex gap-2">
-            <Input
-              value={foodName}
-              onChange={(e) => setFoodName(e.target.value)}
-              placeholder="Only if photo didn't work..."
-              onKeyDown={(e) => e.key === 'Enter' && handleAnalyzeByName()}
-            />
-            <Button onClick={handleVoice} variant="outline" size="icon">
-              <Mic className={`h-4 w-4 ${listening ? 'text-destructive animate-pulse' : ''}`} />
-            </Button>
-            <Button onClick={() => handleAnalyzeByName()} disabled={!foodName || loading}>
-              Analyze
-            </Button>
-          </div>
+        {showOptionalInput && (
+          <Card className="p-5 mt-3 border-border shadow-sm text-left animate-slide-up">
+            <div className="flex gap-2">
+              <Input
+                value={foodName}
+                onChange={(e) => setFoodName(e.target.value)}
+                placeholder="e.g. Grilled Chicken Salad, Paneer Butter Masala..."
+                className="text-sm h-11"
+                onKeyDown={(e) => e.key === 'Enter' && handleAnalyzeByName()}
+              />
+              <Button onClick={handleVoice} variant="outline" className="h-11 w-11 p-0 shrink-0">
+                <Mic className={`h-5 w-5 ${listening ? 'text-destructive animate-pulse' : ''}`} />
+              </Button>
+              <Button onClick={() => handleAnalyzeByName()} disabled={!foodName || loading} className="h-11 px-5 font-bold text-sm">
+                Analyze
+              </Button>
+            </div>
+          </Card>
+        )}
+      </div>
+
+      {/* LOADING */}
+      {loading && (
+        <Card className="p-8 text-center border-emerald-500/30 bg-emerald-500/5 animate-fade-in max-w-4xl mx-auto mb-8">
+          <Loader2 className="h-8 w-8 animate-spin text-emerald-500 mx-auto mb-3" />
+          <p className="text-base font-bold text-foreground">AI is inspecting your meal photo...</p>
+          <p className="text-sm text-muted-foreground mt-1">Identifying dish ingredients, calories, macros, and profile fit.</p>
         </Card>
       )}
 
-      {loading && (
-        <div className="flex flex-col items-center py-12">
-          <Loader2 className="h-8 w-8 animate-spin text-primary mb-3" />
-          <p className="text-muted-foreground font-medium">AI analyzing your meal...</p>
-          <p className="text-xs text-muted-foreground mt-1">Identifying dish, ingredients & nutrition</p>
-        </div>
-      )}
-
+      {/* ERROR */}
       {error && !loading && (
-        <Card className="p-6 text-center border-destructive/50 bg-destructive/5 mb-6">
-          <p className="text-destructive font-medium mb-2">{error}</p>
+        <Card className="p-6 text-center border-destructive/50 bg-destructive/5 text-destructive font-semibold text-sm max-w-4xl mx-auto mb-8 animate-scale-in">
+          <div className="flex items-center justify-center gap-2 mb-2 font-bold text-base">
+            <AlertCircle className="h-5 w-5" />
+            {error}
+          </div>
           <p className="text-xs text-muted-foreground">
             {error.includes('quota') || error.includes('rate limit')
-              ? 'Free tier is limited. Wait 2–5 minutes, then click Scan & Analyze once.'
-              : error.includes('GEMINI_API_KEY') || error.includes('Invalid GEMINI')
-                ? 'Add GEMINI_API_KEY to .env, then restart: npm run dev:clean'
-                : error.includes('not set up') || error.includes('Generative Language')
-                  ? 'Enable Generative Language API in Google Cloud, or use a key from aistudio.google.com/apikey'
-                  : 'Restart: npm run dev:clean (required after changing .env)'}
+              ? 'Free API quota reached. Please wait 1–2 minutes before trying again.'
+              : 'Try re-uploading the photo or typing the dish name.'}
           </p>
         </Card>
       )}
 
+      {/* RESULTS CARD & AI ASSISTANT BELOW IT */}
       {analysis && !loading && (
-        <FoodCard
-          analysis={analysis}
-          profile={profile}
-          targets={targets ?? (profile ? calculateTargets(profile) : null)}
-          onLogged={() => router.push('/dashboard')}
-        />
+        <div className="animate-scale-in space-y-6 max-w-4xl mx-auto">
+          <FoodCard
+            analysis={analysis}
+            profile={profile}
+            targets={targets ?? (profile ? calculateTargets(profile) : null)}
+            onLogged={() => router.push('/dashboard')}
+          />
+
+          {/* INTEGRATED AI ASSISTANT DIRECTLY BELOW SCAN RESULTS */}
+          <ScanAIAssistant
+            analysis={analysis}
+            onAnalysisUpdated={(newAnalysis) => setAnalysis(newAnalysis)}
+            scanType="unpackaged"
+          />
+        </div>
       )}
     </div>
   );

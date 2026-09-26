@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getDb, ObjectId } from '@/lib/mongodb';
+import { getUserFromRequest } from '@/lib/auth';
 import { getMealType, type LoggedMeal } from '@/lib/nutrition';
 
 function serializeMeal(doc: Record<string, unknown>) {
@@ -12,7 +13,8 @@ function serializeMeal(doc: Record<string, unknown>) {
 
 export async function GET(req: Request) {
   try {
-    const userId = req.headers.get('x-user-id') || 'demo-user';
+    const session = await getUserFromRequest(req);
+    const userId = session?.userId || req.headers.get('x-user-id') || 'demo-user';
     const db = await getDb();
     const meals = await db
       .collection('meals')
@@ -28,7 +30,8 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   try {
-    const userId = req.headers.get('x-user-id') || 'demo-user';
+    const session = await getUserFromRequest(req);
+    const userId = session?.userId || req.headers.get('x-user-id') || 'demo-user';
     const body = await req.json();
     const db = await getDb();
     const mealType = body.mealType || getMealType(new Date().getHours());
@@ -58,7 +61,8 @@ export async function POST(req: Request) {
 
 export async function DELETE(req: Request) {
   try {
-    const userId = req.headers.get('x-user-id') || 'demo-user';
+    const session = await getUserFromRequest(req);
+    const userId = session?.userId || req.headers.get('x-user-id') || 'demo-user';
     const { searchParams } = new URL(req.url);
     const mealId = searchParams.get('id');
     if (!mealId) return NextResponse.json({ error: 'id required' }, { status: 400 });

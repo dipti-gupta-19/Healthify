@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getDb, ObjectId } from '@/lib/mongodb';
+import { getUserFromRequest } from '@/lib/auth';
 import {
   analyzeFeedbackSymptoms,
   type FeedbackSymptom,
@@ -8,8 +9,22 @@ import {
 
 export async function POST(req: Request) {
   try {
-    const userId = req.headers.get('x-user-id') || 'demo-user';
+    const session = await getUserFromRequest(req);
+    const userId = session?.userId || req.headers.get('x-user-id') || 'demo-user';
     const body = await req.json();
+
+    const db = await getDb();
+
+    // Handle AI Scan Autocorrect feedback logging
+    if (body.scanCorrection) {
+      await db.collection('corrections').insertOne({
+        ...body.scanCorrection,
+        userId,
+        createdAt: new Date().toISOString(),
+      });
+      return NextResponse.json({ ok: true });
+    }
+
     const { mealId, symptoms, severity, notes, liked } = body as {
       mealId: string;
       symptoms: FeedbackSymptom[];
@@ -33,19 +48,40 @@ export async function POST(req: Request) {
       liked: liked ?? (symptoms?.length === 1 && symptoms[0] === 'none'),
     };
 
-    const db = await getDb();
+    // Try finding by ObjectId or by string id
+    let queryFilter: any = { userId };
+    if (ObjectId.isValid(mealId)) {
+      queryFilter._id = new ObjectId(mealId);
+    } else {
+      queryFilter._id = mealId;
+    }
 
-    const meal = await db.collection('meals').findOne({
-      _id: new ObjectId(mealId),
-      userId,
-    });
+    let meal = await db.collection('meals').findOne(queryFilter);
+
+    // Fallback: search by _id alone if user ID migrated
+    if (!meal && ObjectId.isValid(mealId)) {
+      meal = await db.collection('meals').findOne({ _id: new ObjectId(mealId) });
+    }
 
     if (!meal) {
-      return NextResponse.json({ error: 'Meal not found' }, { status: 404 });
+      // Create a fallback feedback log so the user's feedback is never lost
+      await db.collection('feedbacks').insertOne({
+        mealId,
+        userId,
+        feedback,
+        createdAt: new Date().toISOString(),
+      });
+      return NextResponse.json({
+        ok: true,
+        feedback,
+        message: analysis.message || 'Feedback recorded successfully!',
+        suspectedAllergy: analysis.suspectedAllergy,
+        suspectedFoodPoisoning: analysis.suspectedFoodPoisoning,
+      });
     }
 
     await db.collection('meals').updateOne(
-      { _id: new ObjectId(mealId), userId },
+      { _id: meal._id },
       { $set: { feedback } },
     );
 
@@ -67,7 +103,7 @@ export async function POST(req: Request) {
     return NextResponse.json({
       ok: true,
       feedback,
-      message: analysis.message,
+      message: analysis.message || 'Feedback recorded successfully!',
       suspectedAllergy: analysis.suspectedAllergy,
       suspectedFoodPoisoning: analysis.suspectedFoodPoisoning,
     });
