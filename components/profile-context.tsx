@@ -109,12 +109,15 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
   const refresh = useCallback(async () => {
     try {
       const activeToken = token || readCachedToken();
-      const headers: Record<string, string> = {};
-      if (activeToken) {
-        headers['Authorization'] = `Bearer ${activeToken}`;
-      } else {
-        headers['x-user-id'] = 'demo-user';
+      if (!activeToken) {
+        setUser(null);
+        setLoading(false);
+        return;
       }
+
+      const headers: Record<string, string> = {
+        Authorization: `Bearer ${activeToken}`,
+      };
 
       const res = await fetch('/api/auth/me', { headers });
       const data = await res.json();
@@ -124,14 +127,20 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
         if (typeof window !== 'undefined') {
           localStorage.setItem(USER_CACHE_KEY, JSON.stringify(data.user));
         }
+      } else {
+        setUser(null);
+        setToken(null);
+        if (typeof window !== 'undefined') {
+          localStorage.removeItem(USER_CACHE_KEY);
+          localStorage.removeItem(TOKEN_CACHE_KEY);
+        }
       }
 
       if (data.profile) {
         const { _id, _v, userId, updatedAt, ...clean } = data.profile;
         const prof = { ...clean, dietType: clean.dietType || 'vegetarian' } as UserProfile;
         applyProfile(prof);
-      } else {
-        // Fetch fallback profile
+      } else if (data.user) {
         const profRes = await fetch('/api/profile', { headers });
         const profData = await profRes.json();
         if (profData.profile) {
@@ -148,21 +157,21 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
 
   const saveProfile = async (p: UserProfile) => {
     const activeToken = token || readCachedToken();
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (activeToken) {
-      headers['Authorization'] = `Bearer ${activeToken}`;
-    } else {
-      headers['x-user-id'] = 'demo-user';
-    }
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${activeToken}`,
+      };
 
-    const res = await fetch('/api/profile', {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(p),
-    });
-    if (!res.ok) {
-      const data = await res.json();
-      throw new Error(data.error || 'Failed to save profile');
+      const res = await fetch('/api/profile', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(p),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || 'Failed to save profile');
+      }
     }
     applyProfile(p);
   };

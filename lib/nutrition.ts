@@ -550,6 +550,13 @@ export interface LoggedMeal {
   isJunkFood?: boolean;
   portionAdvice?: string;
   feedback?: MealFeedback;
+  healthValidation?: {
+    isSuitable: boolean | 'caution';
+    statusBadge: string;
+    color: string;
+    reason: string;
+    suggestion: string;
+  };
 }
 
 export type FeedbackSymptom =

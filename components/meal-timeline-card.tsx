@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { HeartPulse, ChevronDown, Trash2, Loader2, ThumbsUp, ThumbsDown } from 'lucide-react';
+import { HeartPulse, ChevronDown, Trash2, Loader2, ThumbsUp, ThumbsDown, Stethoscope } from 'lucide-react';
 import type { LoggedMeal, FeedbackSymptom } from '@/lib/nutrition';
 import { classifyIngredient, isMealLiked } from '@/lib/nutrition';
 import { toast } from 'sonner';
@@ -103,12 +103,36 @@ export function MealTimelineCard({
             )}
             {meal.isJunkFood && <Badge variant="secondary" className="text-xs">🍟 Junk food</Badge>}
           </div>
+
           <p className="text-xs text-muted-foreground mt-1">
             {new Date(meal.loggedAt).toLocaleString('en-US', {
               weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
             })}
             {' · '}{meal.facts.calories} kcal · {meal.facts.protein}g protein · {meal.facts.fat}g fat
           </p>
+
+          {/* STORED HEALTH SCAN VERDICT & RECOVERY ADVICE */}
+          {meal.healthValidation && (
+            <div
+              className={`mt-2 p-2.5 rounded-xl border space-y-1 text-xs ${
+                meal.healthValidation.color === 'rose'
+                  ? 'border-rose-500/30 bg-rose-500/10 text-rose-900 dark:text-rose-200'
+                  : meal.healthValidation.color === 'amber'
+                  ? 'border-amber-500/30 bg-amber-500/10 text-amber-900 dark:text-amber-200'
+                  : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-900 dark:text-emerald-200'
+              }`}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5 font-bold">
+                  <Stethoscope className="h-3.5 w-3.5 shrink-0" />
+                  <span>{meal.healthValidation.statusBadge}</span>
+                </div>
+              </div>
+              <p className="text-muted-foreground text-[11px] leading-relaxed">{meal.healthValidation.reason}</p>
+              <p className="font-semibold text-[11px] pt-0.5">💡 {meal.healthValidation.suggestion}</p>
+            </div>
+          )}
+
           {meal.portionAdvice && (
             <p className="text-xs text-warning mt-1">{meal.portionAdvice}</p>
           )}

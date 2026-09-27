@@ -48,7 +48,10 @@ export default function PackagedScanPage() {
       toast.error('Please set up your profile first for personalized results.');
       return;
     }
-    const code = overrideBarcode ?? barcode;
+    const code = (overrideBarcode || barcode || '').trim();
+    const text = ingredientText.trim();
+    const isPureDigits = /^\d{6,14}$/.test(text);
+
     setLoading(true);
     setError('');
     setAnalysis(null);
@@ -57,13 +60,17 @@ export default function PackagedScanPage() {
       if (token) headers['Authorization'] = `Bearer ${token}`;
       else headers['x-user-id'] = 'demo-user';
 
+      const sendBarcode = type === 'barcode' ? code : isPureDigits ? text : (code || undefined);
+      const sendText = text || undefined;
+      const sendImage = type === 'label-image' ? imageBase64 : undefined;
+
       const res = await fetch('/api/food/packaged', {
         method: 'POST',
         headers,
         body: JSON.stringify({
-          barcode: type === 'barcode' ? code : undefined,
-          ingredientText: type === 'ingredients' ? ingredientText : undefined,
-          imageBase64: type === 'label-image' ? imageBase64 : undefined,
+          barcode: sendBarcode,
+          ingredientText: sendText,
+          imageBase64: sendImage,
           mimeType,
           profile,
         }),
@@ -111,7 +118,7 @@ export default function PackagedScanPage() {
         if (ocrText.length > 5) {
           setIngredientText(ocrText);
           toast.info('Ingredients detected from label — analyzing...');
-          await handleScan('ingredients');
+          await handleScan('ingredients', undefined, dataUrl, 'image/jpeg');
         } else {
           toast.info('Using AI to analyze ingredient label...');
           await handleScan('label-image', undefined, dataUrl, 'image/jpeg');

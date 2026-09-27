@@ -3,6 +3,9 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { MessageCircle, X, Send, Bot, ChevronDown, Sparkles } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useProfile } from '@/components/profile-context';
+import { readLocalMeals } from '@/lib/meal-history';
+import { getStoredHealthCheckin } from '@/lib/health-checkin';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -13,9 +16,10 @@ interface Message {
 }
 
 const SUGGESTIONS = [
-  'What did I eat today?',
-  'How close am I to my goal?',
-  'Suggest a protein habit for me',
+  '📋 Summarize my food history',
+  '💪 How\'s my protein goal today?',
+  '🤒 Foods for my recovery today',
+  '🥗 What should I eat for dinner?',
 ];
 
 // ─── Typing indicator ─────────────────────────────────────────────────────────
@@ -56,7 +60,7 @@ function MessageBubble({ msg }: { msg: Message }) {
         className={cn(
           'max-w-[78%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed',
           isUser
-            ? 'rounded-tr-sm bg-primary text-primary-foreground'
+            ? 'rounded-tr-sm bg-primary text-primary-foreground font-medium'
             : 'rounded-tl-sm bg-muted text-foreground',
         )}
       >
@@ -69,6 +73,7 @@ function MessageBubble({ msg }: { msg: Message }) {
 // ─── Main widget ──────────────────────────────────────────────────────────────
 
 export function ChatWidget() {
+  const { profile, token } = useProfile();
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
@@ -110,18 +115,27 @@ export function ChatWidget() {
       setLoading(true);
 
       try {
-        // Send last 4 messages (2 turns) as history for conversational continuity
         const history = messages
           .slice(-4)
           .map((m) => ({ role: m.role, text: m.text }));
 
+        const localMeals = readLocalMeals();
+        const healthCheckin = getStoredHealthCheckin();
+
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+
         const res = await fetch('/api/chat', {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-user-id': 'demo-user',
-          },
-          body: JSON.stringify({ message: trimmed, history }),
+          headers,
+          body: JSON.stringify({
+            message: trimmed,
+            history,
+            profile,
+            localMeals,
+            healthCondition: healthCheckin.condition,
+            customSymptoms: healthCheckin.customSymptoms,
+          }),
         });
 
         const data = await res.json();
@@ -146,7 +160,7 @@ export function ChatWidget() {
         setLoading(false);
       }
     },
-    [loading, messages],
+    [loading, messages, profile, token],
   );
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -160,7 +174,7 @@ export function ChatWidget() {
 
   return (
     <>
-      {/* Keyframes injected as a style tag — keeps this file self-contained */}
+      {/* Keyframes injected as a style tag */}
       <style>{`
         @keyframes chatDotBounce {
           0%, 80%, 100% { transform: translateY(0); opacity: 0.4; }
@@ -214,8 +228,8 @@ export function ChatWidget() {
                   <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10">
                     <Bot className="h-3.5 w-3.5 text-primary" />
                   </div>
-                  <div className="max-w-[78%] rounded-2xl rounded-tl-sm bg-muted px-3.5 py-2.5 text-sm leading-relaxed text-foreground">
-                    Hey! I can answer questions about your meals, nutrition goals, or suggest habits. What would you like to know? 🥗
+                  <div className="max-w-[85%] rounded-2xl rounded-tl-sm bg-muted px-3.5 py-2.5 text-sm leading-relaxed text-foreground font-medium">
+                    Hello! I am your AI Nutrition Assistant. Ask me anything about your food history, protein targets, or recovery foods for today! 🥗
                   </div>
                 </div>
 
@@ -224,9 +238,8 @@ export function ChatWidget() {
                   {SUGGESTIONS.map((s) => (
                     <button
                       key={s}
-                      id={`chat-suggestion-${s.slice(0, 20).replace(/\s+/g, '-').toLowerCase()}`}
                       onClick={() => sendMessage(s)}
-                      className="w-fit rounded-full border border-primary/30 bg-primary/5 px-3.5 py-1.5 text-left text-xs font-medium text-primary transition hover:bg-primary/10"
+                      className="w-fit rounded-full border border-primary/30 bg-primary/5 px-3.5 py-1.5 text-left text-xs font-semibold text-primary transition hover:bg-primary/10 active:scale-95"
                     >
                       {s}
                     </button>
@@ -264,12 +277,11 @@ export function ChatWidget() {
                 value={input}
                 onChange={(e) => {
                   setInput(e.target.value);
-                  // Auto-grow: reset then set scrollHeight
                   e.target.style.height = 'auto';
                   e.target.style.height = `${Math.min(e.target.scrollHeight, 100)}px`;
                 }}
                 onKeyDown={handleKeyDown}
-                placeholder="Ask about your meals or goals…"
+                placeholder="Ask about your meals, history or goals…"
                 rows={1}
                 disabled={loading}
                 className="flex-1 resize-none bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground disabled:opacity-50"
@@ -311,7 +323,6 @@ export function ChatWidget() {
         )}
         style={{ boxShadow: open ? undefined : '0 4px 24px hsl(152 56% 40% / 0.4)' }}
       >
-        {/* Pulse ring — shown only before first interaction */}
         {pulsed && !open && messages.length === 0 && (
           <span
             className="absolute inset-0 rounded-full bg-primary"

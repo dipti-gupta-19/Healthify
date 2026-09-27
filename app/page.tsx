@@ -3,12 +3,13 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Camera, ClipboardList, ArrowRight, Heart, Brain, Clock, ShieldCheck, Sparkles, TrendingUp, ChevronRight } from 'lucide-react';
 import { ProfileBanner } from '@/components/profile-banner';
+import { HealthCheckinBanner } from '@/components/health-checkin-banner';
 
 export default function Home() {
   return (
-    <div className="mx-auto max-w-7xl px-4 sm:px-6 py-6 sm:py-10 animate-fade-in">
+    <div className="mx-auto max-w-7xl px-4 sm:px-6 py-6 sm:py-10 animate-fade-in space-y-10">
       {/* HERO SECTION */}
-      <section className="text-center max-w-3xl mx-auto mb-10 pt-2">
+      <section className="text-center max-w-3xl mx-auto pt-2">
         <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-4 py-1.5 text-xs font-bold text-primary mb-5 shadow-xs">
           <Sparkles className="h-3.5 w-3.5" />
           AI-Powered Nutrition Intelligence
@@ -20,13 +21,18 @@ export default function Home() {
           </span>
         </h1>
         <p className="text-sm sm:text-base text-muted-foreground text-balance max-w-2xl mx-auto mb-6 leading-relaxed">
-          Instant packaged food additive detection, photo meal recognition, and personalized verdicts tailored to your body and goals.
+          Instant packaged food additive detection, photo meal recognition, and daily AI health recommendations tailored to how you feel today.
         </p>
         <ProfileBanner />
       </section>
 
+      {/* DAILY HEALTH CHECK-IN BANNER ON HOME PAGE */}
+      <section>
+        <HealthCheckinBanner />
+      </section>
+
       {/* QUICK SCAN ACTION CARDS */}
-      <section className="grid sm:grid-cols-2 gap-5 mb-12">
+      <section className="grid sm:grid-cols-2 gap-5">
         <Link href="/scan/packaged" className="group block">
           <Card className="relative h-full overflow-hidden p-6 sm:p-8 transition-all hover:shadow-xl hover:border-primary/50 glass-card">
             <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary text-primary-foreground mb-4 shadow-md group-hover:scale-105 transition-transform">
@@ -73,7 +79,7 @@ export default function Home() {
       </section>
 
       {/* WHY HEALTHIFY */}
-      <section className="mb-12">
+      <section>
         <div className="text-center mb-6">
           <h2 className="text-xl sm:text-2xl font-bold mb-1">Why Healthify?</h2>
           <p className="text-xs sm:text-sm text-muted-foreground">More than calorie counting — intelligent nutrition science.</p>

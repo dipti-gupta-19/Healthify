@@ -5,10 +5,11 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
-import { CheckCircle2, XCircle, MinusCircle, Plus, Loader2, HeartPulse, ChevronDown, ThumbsUp, ThumbsDown } from 'lucide-react';
+import { CheckCircle2, XCircle, MinusCircle, Plus, Loader2, HeartPulse, ChevronDown, ThumbsUp, ThumbsDown, Stethoscope, AlertTriangle } from 'lucide-react';
 import { useProfile } from '@/components/profile-context';
 import type { FoodAnalysis, UserProfile, NutritionTargets, FeedbackSymptom } from '@/lib/nutrition';
 import { classifyIngredient, getMealType } from '@/lib/nutrition';
+import { getStoredHealthCheckin, validateFoodForDailyHealth } from '@/lib/health-checkin';
 import { toast } from 'sonner';
 import { appendLocalMeal } from '@/lib/meal-history';
 
@@ -55,6 +56,15 @@ export function FoodCard({
   const [feedbackNotes, setFeedbackNotes] = useState('');
   const [submittingFeedback, setSubmittingFeedback] = useState(false);
 
+  // Retrieve today's health checkin and validate scanned food
+  const healthCheckin = getStoredHealthCheckin();
+  const healthValidation = validateFoodForDailyHealth(
+    analysis.name,
+    analysis.ingredients || [],
+    healthCheckin.condition,
+    healthCheckin.customSymptoms
+  );
+
   const verdict = VERDICT_CONFIG[analysis.verdict];
   const VerdictIcon = verdict.icon;
   const calPct = targets ? Math.min(100, (analysis.facts.calories / targets.calories) * 100) : 0;
@@ -77,6 +87,7 @@ export function FoodCard({
       healthConcerns: analysis.healthConcerns || [],
       isJunkFood: analysis.isJunkFood || false,
       portionAdvice: analysis.portionAdvice || undefined,
+      healthValidation: healthCheckin.condition !== 'healthy' || (healthCheckin.customSymptoms && healthCheckin.customSymptoms.trim()) ? healthValidation : undefined,
       loggedAt,
       mealType,
       userId: user?.userId || 'demo-user',
@@ -211,6 +222,34 @@ export function FoodCard({
       </div>
 
       <div className="p-4 space-y-4">
+        {/* DAILY HEALTH STATUS SCANNER VALIDATION */}
+        {healthCheckin.condition !== 'healthy' || (healthCheckin.customSymptoms && healthCheckin.customSymptoms.trim()) ? (
+          <div
+            className={`p-4 rounded-xl border-2 space-y-1.5 shadow-xs transition-all ${
+              healthValidation.color === 'rose'
+                ? 'border-rose-500/50 bg-rose-500/10 text-rose-900 dark:text-rose-200'
+                : healthValidation.color === 'amber'
+                ? 'border-amber-500/50 bg-amber-500/10 text-amber-900 dark:text-amber-200'
+                : 'border-emerald-500/50 bg-emerald-500/10 text-emerald-900 dark:text-emerald-200'
+            }`}
+          >
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2 font-extrabold text-sm">
+                <Stethoscope className="h-4 w-4" />
+                <span>Today&apos;s Health Scan Verdict</span>
+              </div>
+              <Badge
+                variant={healthValidation.color === 'rose' ? 'destructive' : 'secondary'}
+                className="text-xs font-bold px-2.5 py-0.5"
+              >
+                {healthValidation.statusBadge}
+              </Badge>
+            </div>
+            <p className="text-xs font-medium leading-relaxed">{healthValidation.reason}</p>
+            <p className="text-xs font-bold pt-1 text-foreground">💡 Recommendation: {healthValidation.suggestion}</p>
+          </div>
+        ) : null}
+
         {/* BIG diet alerts for vegetarians */}
         {analysis.dietAlerts && analysis.dietAlerts.length > 0 && (
           <div className="space-y-2">

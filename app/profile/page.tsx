@@ -24,23 +24,28 @@ import {
   Flame,
   Utensils,
   Lock,
+  LogOut,
+  Mail,
+  Calendar,
+  Sparkles,
+  HeartPulse,
 } from 'lucide-react';
 import type { UserProfile, Sex, ActivityLevel, MedicalCondition, DietType } from '@/lib/nutrition';
-import { calculateTargets } from '@/lib/nutrition';
+import { calculateTargets, calculateBMR } from '@/lib/nutrition';
 import { toast } from 'sonner';
 
 const ACTIVITY_LABELS: Record<ActivityLevel, string> = {
-  sedentary: 'Sedentary (little exercise)',
-  light: 'Light (1-3 days/week)',
-  moderate: 'Moderate (3-5 days/week)',
-  active: 'Active (6-7 days/week)',
-  very_active: 'Very Active (intense daily)',
+  sedentary: 'Sedentary (little or no exercise)',
+  light: 'Lightly Active (exercise 1-3 days/week)',
+  moderate: 'Moderately Active (exercise 3-5 days/week)',
+  active: 'Active (intense exercise 6-7 days/week)',
+  very_active: 'Very Active (heavy physical job or daily training)',
 };
 
 const COMMON_ALLERGIES = ['peanut', 'tree nuts', 'milk', 'egg', 'soy', 'wheat', 'fish', 'shellfish', 'sesame', 'mustard'];
 
 export default function ProfilePage() {
-  const { user, profile, saveProfile, loading, setAuthModalOpen } = useProfile();
+  const { user, profile, saveProfile, loading, setAuthModalOpen, logoutUser } = useProfile();
   const [isEditing, setIsEditing] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -69,15 +74,16 @@ export default function ProfilePage() {
 
   const currentProfile = isEditing ? form : profile || form;
   const targets = calculateTargets(currentProfile);
+  const bmr = calculateBMR(currentProfile);
 
   // BMI calculation
   const heightM = currentProfile.heightCm / 100;
   const bmi = heightM > 0 ? (currentProfile.weightKg / (heightM * heightM)).toFixed(1) : '22.0';
   const getBmiCategory = (val: number) => {
-    if (val < 18.5) return { label: 'Underweight', color: 'text-amber-500 bg-amber-50 dark:bg-amber-950/30' };
-    if (val < 25) return { label: 'Normal weight', color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-950/30' };
-    if (val < 30) return { label: 'Overweight', color: 'text-amber-600 bg-amber-50 dark:bg-amber-950/30' };
-    return { label: 'Obese', color: 'text-rose-600 bg-rose-50 dark:bg-rose-950/30' };
+    if (val < 18.5) return { label: 'Underweight', color: 'text-amber-500 bg-amber-50 dark:bg-amber-950/30 border-amber-300' };
+    if (val < 25) return { label: 'Normal weight', color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-950/30 border-emerald-300' };
+    if (val < 30) return { label: 'Overweight', color: 'text-amber-600 bg-amber-50 dark:bg-amber-950/30 border-amber-300' };
+    return { label: 'Obese', color: 'text-rose-600 bg-rose-50 dark:bg-rose-950/30 border-rose-300' };
   };
   const bmiCat = getBmiCategory(parseFloat(bmi));
 
@@ -111,7 +117,7 @@ export default function ProfilePage() {
     try {
       await saveProfile(form);
       setIsEditing(false);
-      toast.success('Profile saved to MongoDB successfully!');
+      toast.success('Health profile saved successfully!');
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to save profile');
     } finally {
@@ -127,116 +133,127 @@ export default function ProfilePage() {
   if (loading && !profile) {
     return (
       <div className="flex items-center justify-center py-24">
-        <div className="animate-pulse text-sm font-semibold text-muted-foreground">Loading profile from MongoDB...</div>
+        <div className="animate-pulse text-sm font-semibold text-muted-foreground">Loading personal profile...</div>
       </div>
     );
   }
 
   return (
-    <div className="mx-auto max-w-7xl px-4 sm:px-8 py-8 animate-fade-in">
-      {/* Account / Auth banner if not logged in */}
-      {!user && (
-        <Card className="p-5 mb-8 border-amber-500/30 bg-amber-500/10 flex flex-col sm:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <Lock className="h-6 w-6 text-amber-600 dark:text-amber-400 shrink-0" />
-            <div>
-              <p className="text-sm font-bold text-amber-900 dark:text-amber-200">
-                You are currently viewing a local profile.
-              </p>
-              <p className="text-xs sm:text-sm text-amber-700 dark:text-amber-300">
-                Sign in or Register to save and sync your health profile across devices in MongoDB!
-              </p>
+    <div className="mx-auto max-w-7xl px-4 sm:px-8 py-8 animate-fade-in space-y-8">
+      {/* PROFESSIONAL ACCOUNT HERO CARD */}
+      <Card className="p-6 sm:p-8 border-2 border-primary/20 bg-gradient-to-r from-primary/10 via-background to-secondary/30 shadow-md relative overflow-hidden">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+          <div className="flex items-center gap-5">
+            <div className="h-20 w-20 rounded-2xl bg-gradient-to-tr from-primary via-teal-500 to-emerald-400 flex items-center justify-center text-primary-foreground text-3xl font-black shadow-lg">
+              {(currentProfile.name || user?.name || 'U').charAt(0).toUpperCase()}
             </div>
-          </div>
-          <Button size="sm" onClick={() => setAuthModalOpen(true)} className="shrink-0 text-xs font-bold px-4 h-10">
-            Sign In / Register
-          </Button>
-        </Card>
-      )}
+            <div className="space-y-1">
+              <div className="flex items-center gap-2.5">
+                <h1 className="text-2xl sm:text-3xl font-extrabold text-foreground">
+                  {currentProfile.name || user?.name || 'Personal Health Profile'}
+                </h1>
+                {user ? (
+                  <Badge variant="outline" className="gap-1 border-primary/40 text-primary font-bold text-xs px-2.5 py-0.5">
+                    <ShieldCheck className="h-3.5 w-3.5" /> Authenticated Member
+                  </Badge>
+                ) : (
+                  <Badge variant="secondary" className="gap-1 font-bold text-xs px-2.5 py-0.5">
+                    Guest Account
+                  </Badge>
+                )}
+              </div>
 
-      {/* Main Profile Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
-        <div className="flex items-center gap-4">
-          <div className="h-16 w-16 rounded-2xl bg-gradient-to-tr from-primary to-emerald-400 flex items-center justify-center text-primary-foreground text-2xl font-extrabold shadow-md">
-            {(currentProfile.name || user?.name || 'U').charAt(0).toUpperCase()}
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-2xl sm:text-3xl font-bold">{currentProfile.name || 'Your Profile'}</h1>
-              <Badge variant="outline" className="gap-1 border-primary/40 text-primary font-bold text-xs px-2.5 py-0.5">
-                <ShieldCheck className="h-3.5 w-3.5" /> MongoDB Synced
-              </Badge>
+              <div className="flex flex-wrap items-center gap-4 text-xs sm:text-sm text-muted-foreground pt-0.5">
+                {user?.email && (
+                  <span className="flex items-center gap-1.5 font-medium text-foreground">
+                    <Mail className="h-3.5 w-3.5 text-primary" /> {user.email}
+                  </span>
+                )}
+                <span className="flex items-center gap-1.5">
+                  <HeartPulse className="h-3.5 w-3.5 text-emerald-500" /> BMR: {Math.round(bmr)} kcal/day
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <Sparkles className="h-3.5 w-3.5 text-sky-500" /> Goal TDEE: {targets.calories} kcal/day
+                </span>
+              </div>
             </div>
-            <p className="text-sm text-muted-foreground mt-0.5">
-              {user?.email ? user.email : 'Personalized Health & Nutrition Profile'}
-            </p>
+          </div>
+
+          <div className="flex items-center gap-3 shrink-0">
+            {user ? (
+              <Button variant="outline" onClick={logoutUser} className="gap-2 text-xs font-bold text-destructive hover:bg-destructive/10 border-destructive/30 h-10 px-4">
+                <LogOut className="h-4 w-4" /> Sign Out
+              </Button>
+            ) : (
+              <Button onClick={() => setAuthModalOpen(true)} className="gap-2 text-xs font-bold h-10 px-4 shadow-sm">
+                <Lock className="h-4 w-4" /> Sign In / Register
+              </Button>
+            )}
+
+            {!isEditing ? (
+              <Button onClick={() => setIsEditing(true)} className="gap-2 text-xs font-bold h-10 px-5 shadow-sm">
+                <Edit3 className="h-4 w-4" /> Edit Profile
+              </Button>
+            ) : (
+              <div className="flex gap-2">
+                <Button variant="outline" onClick={handleCancel} disabled={saving} className="h-10 px-4 text-xs font-bold">
+                  Cancel
+                </Button>
+                <Button onClick={handleSave} disabled={saving} className="gap-1.5 h-10 px-4 text-xs font-bold">
+                  <Check className="h-4 w-4" /> Save
+                </Button>
+              </div>
+            )}
           </div>
         </div>
+      </Card>
 
-        <div>
-          {!isEditing ? (
-            <Button onClick={() => setIsEditing(true)} className="gap-2 text-sm font-bold px-5 h-11 shadow-sm">
-              <Edit3 className="h-4 w-4" /> Edit Profile
-            </Button>
-          ) : (
-            <div className="flex gap-2">
-              <Button variant="outline" onClick={handleCancel} disabled={saving} className="h-11 px-5 text-sm font-bold">
-                Cancel
-              </Button>
-              <Button onClick={handleSave} disabled={saving} className="gap-2 h-11 px-5 text-sm font-bold">
-                <Check className="h-4 w-4" /> Save Changes
-              </Button>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* VIEW PERSPECTIVE */}
+      {/* VIEW MODE */}
       {!isEditing ? (
         <div className="space-y-6">
-          {/* Quick Metrics Grid */}
+          {/* BIOMETRICS GRID */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-            <Card className="p-5 flex items-center gap-4 glass-card">
-              <div className="p-3 rounded-xl bg-primary/10 text-primary">
+            <Card className="p-5 flex items-center gap-4 glass-card border-border/80">
+              <div className="p-3 rounded-2xl bg-primary/10 text-primary">
                 <User className="h-6 w-6" />
               </div>
               <div>
                 <p className="text-xs font-semibold text-muted-foreground">Age & Sex</p>
-                <p className="text-base sm:text-lg font-bold capitalize">
+                <p className="text-base sm:text-lg font-bold capitalize text-foreground">
                   {currentProfile.age} yrs, {currentProfile.sex}
                 </p>
               </div>
             </Card>
 
-            <Card className="p-5 flex items-center gap-4 glass-card">
-              <div className="p-3 rounded-xl bg-primary/10 text-primary">
+            <Card className="p-5 flex items-center gap-4 glass-card border-border/80">
+              <div className="p-3 rounded-2xl bg-primary/10 text-primary">
                 <Scale className="h-6 w-6" />
               </div>
               <div>
                 <p className="text-xs font-semibold text-muted-foreground">Weight</p>
-                <p className="text-base sm:text-lg font-bold">{currentProfile.weightKg} kg</p>
+                <p className="text-base sm:text-lg font-bold text-foreground">{currentProfile.weightKg} kg</p>
               </div>
             </Card>
 
-            <Card className="p-5 flex items-center gap-4 glass-card">
-              <div className="p-3 rounded-xl bg-primary/10 text-primary">
+            <Card className="p-5 flex items-center gap-4 glass-card border-border/80">
+              <div className="p-3 rounded-2xl bg-primary/10 text-primary">
                 <Ruler className="h-6 w-6" />
               </div>
               <div>
                 <p className="text-xs font-semibold text-muted-foreground">Height</p>
-                <p className="text-base sm:text-lg font-bold">{currentProfile.heightCm} cm</p>
+                <p className="text-base sm:text-lg font-bold text-foreground">{currentProfile.heightCm} cm</p>
               </div>
             </Card>
 
-            <Card className="p-5 flex items-center gap-4 glass-card">
-              <div className="p-3 rounded-xl bg-primary/10 text-primary">
+            <Card className="p-5 flex items-center gap-4 glass-card border-border/80">
+              <div className="p-3 rounded-2xl bg-primary/10 text-primary">
                 <Activity className="h-6 w-6" />
               </div>
               <div>
-                <p className="text-xs font-semibold text-muted-foreground">BMI Index</p>
+                <p className="text-xs font-semibold text-muted-foreground">BMI Rating</p>
                 <div className="flex items-center gap-2 mt-0.5">
-                  <span className="text-base sm:text-lg font-bold">{bmi}</span>
-                  <span className={`text-xs px-2 py-0.5 rounded-md font-bold ${bmiCat.color}`}>
+                  <span className="text-base sm:text-lg font-bold text-foreground">{bmi}</span>
+                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold border ${bmiCat.color}`}>
                     {bmiCat.label}
                   </span>
                 </div>
@@ -244,48 +261,48 @@ export default function ProfilePage() {
             </Card>
           </div>
 
-          {/* Diet & Goal Cards */}
+          {/* DIETARY PREFERENCE & GOAL */}
           <div className="grid sm:grid-cols-2 gap-6">
-            <Card className="p-6">
+            <Card className="p-6 border border-border shadow-xs">
               <div className="flex items-center gap-2 mb-4">
                 <Utensils className="h-5 w-5 text-primary" />
-                <h2 className="text-lg font-bold">Dietary Preference</h2>
+                <h2 className="text-lg font-bold text-foreground">Dietary Preference</h2>
               </div>
               <div className="flex items-center gap-4 p-4 rounded-xl border border-border bg-secondary/30">
                 <span className="text-4xl">
                   {currentProfile.dietType === 'vegetarian' ? '🥗' : '🍗'}
                 </span>
                 <div>
-                  <p className="font-bold capitalize text-base">
+                  <p className="font-bold capitalize text-base text-foreground">
                     {currentProfile.dietType === 'vegetarian' ? 'Vegetarian' : 'Non-Vegetarian'}
                   </p>
-                  <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">
+                  <p className="text-xs text-muted-foreground mt-0.5">
                     {currentProfile.dietType === 'vegetarian'
-                      ? 'No meat or fish. Scanners warn on non-veg ingredients.'
-                      : 'Includes all foods, poultry, meat, and fish.'}
+                      ? 'Strict veg diet. Scanners automatically flag non-veg ingredients & animal fats.'
+                      : 'Includes all food types, poultry, seafood, and meats.'}
                   </p>
                 </div>
               </div>
             </Card>
 
-            <Card className="p-6">
+            <Card className="p-6 border border-border shadow-xs">
               <div className="flex items-center gap-2 mb-4">
                 <Target className="h-5 w-5 text-primary" />
-                <h2 className="text-lg font-bold">Fitness Goal</h2>
+                <h2 className="text-lg font-bold text-foreground">Fitness Goal & Activity Level</h2>
               </div>
               <div className="flex items-center gap-4 p-4 rounded-xl border border-border bg-secondary/30">
                 <span className="text-4xl">
                   {currentProfile.goal === 'loss' ? '🔥' : currentProfile.goal === 'gain' ? '💪' : '⚖️'}
                 </span>
                 <div>
-                  <p className="font-bold capitalize text-base">
+                  <p className="font-bold capitalize text-base text-foreground">
                     {currentProfile.goal === 'loss'
-                      ? 'Weight Loss (-500 kcal/day)'
+                      ? 'Weight Loss (-500 kcal deficit)'
                       : currentProfile.goal === 'gain'
-                      ? 'Muscle Gain (+400 kcal/day)'
-                      : 'Maintain Weight (Balance)'}
+                      ? 'Muscle Gain (+400 kcal surplus)'
+                      : 'Maintain Weight (Caloric Balance)'}
                   </p>
-                  <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">
+                  <p className="text-xs text-muted-foreground mt-0.5">
                     Activity: {ACTIVITY_LABELS[currentProfile.activityLevel] || currentProfile.activityLevel}
                   </p>
                 </div>
@@ -293,19 +310,19 @@ export default function ProfilePage() {
             </Card>
           </div>
 
-          {/* Medical Conditions & Allergies */}
+          {/* MEDICAL CONDITIONS & ALLERGIES */}
           <div className="grid sm:grid-cols-2 gap-6">
-            <Card className="p-6">
+            <Card className="p-6 border border-border shadow-xs">
               <div className="flex items-center gap-2 mb-3">
                 <Stethoscope className="h-5 w-5 text-primary" />
-                <h2 className="text-lg font-bold">Medical Conditions</h2>
+                <h2 className="text-lg font-bold text-foreground">Medical Conditions</h2>
               </div>
               {currentProfile.medicalConditions.length === 0 || currentProfile.medicalConditions.includes('none' as any) ? (
                 <p className="text-sm text-muted-foreground">No specific medical conditions selected.</p>
               ) : (
                 <div className="flex flex-wrap gap-2 mt-2">
                   {currentProfile.medicalConditions.map((c) => (
-                    <Badge key={c} variant="secondary" className="px-3 py-1 text-sm font-bold capitalize">
+                    <Badge key={c} variant="secondary" className="px-3 py-1 text-xs font-bold capitalize">
                       {c}
                     </Badge>
                   ))}
@@ -313,17 +330,17 @@ export default function ProfilePage() {
               )}
             </Card>
 
-            <Card className="p-6">
+            <Card className="p-6 border border-border shadow-xs">
               <div className="flex items-center gap-2 mb-3">
                 <AlertTriangle className="h-5 w-5 text-amber-500" />
-                <h2 className="text-lg font-bold">Allergies & Intolerances</h2>
+                <h2 className="text-lg font-bold text-foreground">Allergies & Intolerances</h2>
               </div>
               {currentProfile.allergies.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No allergies specified.</p>
+                <p className="text-sm text-muted-foreground">No food allergies specified.</p>
               ) : (
                 <div className="flex flex-wrap gap-2 mt-2">
                   {currentProfile.allergies.map((a) => (
-                    <Badge key={a} variant="destructive" className="px-3 py-1 text-sm font-bold">
+                    <Badge key={a} variant="destructive" className="px-3 py-1 text-xs font-bold">
                       {a}
                     </Badge>
                   ))}
@@ -332,15 +349,15 @@ export default function ProfilePage() {
             </Card>
           </div>
 
-          {/* Daily Nutrition Targets Card */}
+          {/* CALCULATED DAILY NUTRITION TARGETS CARD */}
           <Card className="p-6 bg-gradient-to-br from-primary/10 via-background to-secondary/30 border-2 border-primary/20 shadow-md">
             <div className="flex items-center justify-between mb-5">
               <div className="flex items-center gap-2">
                 <Flame className="h-6 w-6 text-primary" />
-                <h2 className="text-xl font-bold">Calculated Daily Nutrition Targets</h2>
+                <h2 className="text-xl font-extrabold text-foreground">Calculated Daily Targets</h2>
               </div>
               <Badge variant="secondary" className="text-xs font-bold px-3 py-1">
-                Mifflin-St Jeor Formula
+                Mifflin-St Jeor Scientific Standard
               </Badge>
             </div>
 
@@ -356,7 +373,7 @@ export default function ProfilePage() {
           </Card>
         </div>
       ) : (
-        /* EDIT PERSPECTIVE */
+        /* EDIT FORM PERSPECTIVE */
         <div className="space-y-6 animate-fade-in">
           <Card className="p-6 border-2 border-primary/40">
             <h2 className="text-lg font-bold mb-2">🥗 Veg or Non-Veg Preference</h2>
@@ -365,8 +382,8 @@ export default function ProfilePage() {
             </p>
             <div className="grid grid-cols-2 gap-4">
               {[
-                { v: 'vegetarian' as DietType, label: 'Vegetarian', emoji: '🥗', desc: 'No meat or fish' },
-                { v: 'non_vegetarian' as DietType, label: 'Non-Vegetarian', emoji: '🍗', desc: 'Includes all foods' },
+                { v: 'vegetarian' as DietType, label: 'Vegetarian', emoji: '🥗', desc: 'No meat, fish or poultry' },
+                { v: 'non_vegetarian' as DietType, label: 'Non-Vegetarian', emoji: '🍗', desc: 'Includes all food types' },
               ].map((d) => (
                 <button
                   key={d.v}
@@ -388,7 +405,7 @@ export default function ProfilePage() {
 
           <Card className="p-6 space-y-4">
             <h2 className="text-lg font-bold flex items-center gap-2">
-              <User className="h-5 w-5 text-primary" /> Basic Information
+              <User className="h-5 w-5 text-primary" /> Basic Personal Information
             </h2>
             <div className="grid sm:grid-cols-2 gap-4">
               <div>
@@ -402,7 +419,7 @@ export default function ProfilePage() {
                 />
               </div>
               <div>
-                <Label htmlFor="age" className="text-sm font-semibold">Age</Label>
+                <Label htmlFor="age" className="text-sm font-semibold">Age (years)</Label>
                 <Input
                   id="age"
                   type="number"
@@ -561,7 +578,7 @@ export default function ProfilePage() {
               Cancel
             </Button>
             <Button size="lg" onClick={handleSave} disabled={saving} className="gap-2 text-sm font-bold px-6">
-              <Check className="h-4 w-4" /> Save Profile to MongoDB
+              <Check className="h-4 w-4" /> Save Profile
             </Button>
           </div>
         </div>

@@ -6,7 +6,7 @@ import { useProfile } from '@/components/profile-context';
 import { AuthModal } from '@/components/auth-modal';
 import { NotificationsDrawer, type AINotification } from '@/components/notifications-drawer';
 import { Leaf, Camera, ClipboardList, LayoutDashboard, UserCircle, Menu, LogIn, LogOut, User, X } from 'lucide-react';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import {
@@ -18,6 +18,9 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 
+import { generateLiveNotifications } from '@/lib/notifications';
+import { readLocalMeals } from '@/lib/meal-history';
+
 const links = [
   { href: '/', label: 'Home', icon: Leaf },
   { href: '/scan/packaged', label: 'Packaged', icon: ClipboardList },
@@ -28,9 +31,10 @@ const links = [
 
 export function Navbar() {
   const pathname = usePathname();
-  const { user, profile, authModalOpen, setAuthModalOpen, loginUser, logoutUser } = useProfile();
+  const { user, profile, targets, authModalOpen, setAuthModalOpen, loginUser, logoutUser } = useProfile();
   const [open, setOpen] = useState(false);
   const [modalTab, setModalTab] = useState<'login' | 'register'>('login');
+  const [notifications, setNotifications] = useState<AINotification[]>([]);
 
   const openLogin = () => {
     setModalTab('login');
@@ -42,22 +46,11 @@ export function Navbar() {
     setAuthModalOpen(true);
   };
 
-  const sampleNotifications: AINotification[] = [
-    {
-      id: 'n1',
-      type: 'reminder',
-      title: 'Lunch Reminder',
-      message: 'Remember to log your lunch to stay on track with your daily protein goal!',
-      timestamp: 'Just now',
-    },
-    {
-      id: 'n2',
-      type: 'recommendation',
-      title: 'High Protein Snack',
-      message: 'Consider Greek yogurt or almonds for your afternoon snack.',
-      timestamp: '1h ago',
-    },
-  ];
+  useEffect(() => {
+    const meals = readLocalMeals();
+    const live = generateLiveNotifications(meals, targets, profile);
+    setNotifications(live);
+  }, [profile, targets, pathname]);
 
   return (
     <header className="sticky top-0 z-50 border-b border-border/60 bg-background/85 backdrop-blur-md transition-all">
@@ -94,7 +87,7 @@ export function Navbar() {
 
         <div className="hidden md:flex items-center gap-3">
           {/* AI Notifications Drawer Widget */}
-          <NotificationsDrawer notifications={sampleNotifications} />
+          <NotificationsDrawer notifications={notifications} />
 
           {user || profile ? (
             <DropdownMenu>
@@ -144,7 +137,7 @@ export function Navbar() {
 
         {/* Mobile menu trigger */}
         <div className="flex items-center gap-2 md:hidden">
-          <NotificationsDrawer notifications={sampleNotifications} />
+          <NotificationsDrawer notifications={notifications} />
           <button
             className="rounded-xl p-2.5 text-foreground hover:bg-muted border border-border"
             onClick={() => setOpen(!open)}

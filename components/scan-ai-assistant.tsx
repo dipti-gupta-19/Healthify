@@ -132,7 +132,7 @@ export function ScanAIAssistant({
 
       const endpoint = scanType === 'packaged' ? '/api/food/packaged' : '/api/food/unpackaged';
       const reqBody = scanType === 'packaged'
-        ? { ingredientText: targetFoodName, profile }
+        ? { userHint: targetFoodName, ingredientText: targetFoodName, profile }
         : { foodName: targetFoodName, profile };
 
       const res = await fetch(endpoint, {
@@ -144,6 +144,11 @@ export function ScanAIAssistant({
       const data = await res.json();
 
       if (res.ok && data.analysis) {
+        // Update parent state so FoodCard dynamically re-renders with full re-analyzed ingredients & nutrition facts
+        if (onAnalysisUpdated) {
+          onAnalysisUpdated(data.analysis);
+        }
+
         // Record AI learning feedback in MongoDB
         await fetch('/api/meals/feedback', {
           method: 'POST',
@@ -151,33 +156,32 @@ export function ScanAIAssistant({
           body: JSON.stringify({
             scanCorrection: {
               previousName: analysis.name,
-              correctedName: targetFoodName,
+              correctedName: data.analysis.name || targetFoodName,
               scanType,
               timestamp: new Date().toISOString(),
             },
           }),
         }).catch(() => {});
 
-        if (onAnalysisUpdated) {
-          onAnalysisUpdated(data.analysis);
-        }
-
-        toast.success(`Autocorrected! Updated result to "${data.analysis.name}" & saved learning to MongoDB.`);
+        const newFoodName = data.analysis.name || targetFoodName;
+        const newCals = data.analysis.facts.calories;
+        const newSugar = data.analysis.facts.sugar ?? 0;
 
         setMessages((prev) => [
           ...prev,
           {
             id: `corr-${Date.now()}`,
             sender: 'ai',
-            text: `✅ Thank you! I corrected "${analysis.name}" to "${data.analysis.name}". I re-calculated the nutrition facts (${data.analysis.facts.calories} kcal) and stored this learning in MongoDB to improve future scans!`,
-            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
             isCorrection: true,
+            text: `✅ Re-analyzed model with hint! Corrected item to "${newFoodName}". Re-estimated ingredients and calculated nutrition facts (${newCals} kcal, ${newSugar}g sugar). Stored this learning to improve future scans!`,
+            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
           },
         ]);
+        toast.success(`AI re-analyzed product as "${newFoodName}"!`);
         setShowCorrectionForm(false);
         setCorrectedName('');
       } else {
-        toast.error('Could not autocorrect with specified dish name.');
+        toast.error(data.error || 'Could not re-analyze food with that name');
       }
     } catch {
       toast.error('Failed to autocorrect food.');
