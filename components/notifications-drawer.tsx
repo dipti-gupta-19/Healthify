@@ -4,17 +4,11 @@ import { useState } from 'react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Bell, Sparkles, AlertTriangle, Clock, Lightbulb, Check, Trash2 } from 'lucide-react';
+import { Bell, Sparkles, AlertTriangle, Clock, Lightbulb, Check, Trash2, HeartPulse } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import type { AINotification } from '@/lib/notifications';
 
-export interface AINotification {
-  id: string;
-  type: 'recommendation' | 'reminder' | 'pattern';
-  title: string;
-  message: string;
-  timestamp: string;
-  read?: boolean;
-}
+export type { AINotification };
 
 interface NotificationsDrawerProps {
   notifications: AINotification[];
@@ -40,6 +34,8 @@ export function NotificationsDrawer({
         return <Clock className="h-4 w-4 text-sky-500" />;
       case 'pattern':
         return <AlertTriangle className="h-4 w-4 text-amber-500" />;
+      case 'health_alert':
+        return <HeartPulse className="h-4 w-4 text-rose-500" />;
       default:
         return <Sparkles className="h-4 w-4 text-primary" />;
     }

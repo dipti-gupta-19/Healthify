@@ -199,6 +199,18 @@ async function fetchFromOFF(barcodeCode: string): Promise<OFFProduct | null> {
   return null;
 }
 
+function extractBarcode(raw: string): string {
+  if (!raw) return '';
+  const trimmed = raw.trim();
+  const matches = trimmed.match(/\b\d{8,14}\b/g);
+  if (matches && matches.length > 0) {
+    const validGtin = matches.find((m) => [8, 12, 13, 14].includes(m.length));
+    if (validGtin) return validGtin;
+    return matches[0];
+  }
+  return trimmed.replace(/\D/g, '');
+}
+
 export async function POST(req: Request) {
   try {
     const body = await req.json();
@@ -219,8 +231,11 @@ export async function POST(req: Request) {
     const userHint = (body as { userHint?: string }).userHint?.trim();
 
     // Auto-detect barcode numbers pasted into ingredient text (e.g. 048500001028)
-    if (!reqBarcode && reqText && /^\d{6,14}$/.test(reqText.replace(/\s+/g, ''))) {
-      reqBarcode = reqText.replace(/\s+/g, '');
+    if (!reqBarcode && reqText) {
+      const extracted = extractBarcode(reqText);
+      if (extracted.length >= 6 && extracted.length <= 14) {
+        reqBarcode = extracted;
+      }
     }
 
     let facts: NutritionFacts;
@@ -251,7 +266,7 @@ export async function POST(req: Request) {
         }
       }
     } else if (reqBarcode) {
-      const cleanBarcode = reqBarcode.replace(/\D/g, '');
+      const cleanBarcode = extractBarcode(reqBarcode);
 
       // Check AI barcode lookup first for exact commercial product match
       const aiBarcodeProduct = await analyzeBarcodeWithAI(cleanBarcode);

@@ -24,6 +24,8 @@ export function BarcodeScanner({ onDetected }: { onDetected: (code: string) => v
         BarcodeFormat.UPC_E,
         BarcodeFormat.CODE_128,
         BarcodeFormat.CODE_39,
+        BarcodeFormat.QR_CODE,
+        BarcodeFormat.DATA_MATRIX,
       ]);
       const reader = new BrowserMultiFormatReader(hints);
 
@@ -47,7 +49,7 @@ export function BarcodeScanner({ onDetected }: { onDetected: (code: string) => v
             const code = result.getText();
             stopScan();
             onDetected(code);
-            toast.success(`Barcode detected: ${code}`);
+            toast.success(`Code detected: ${code}`);
           }
         },
       );
@@ -79,19 +81,17 @@ export function BarcodeScanner({ onDetected }: { onDetected: (code: string) => v
   return (
     <div className="space-y-3">
       <div className={`relative overflow-hidden rounded-xl border-2 border-primary bg-black ${scanning ? '' : 'hidden'}`}>
-        <video ref={videoRef} className="w-full" playsInline muted />
+        <video ref={videoRef} className="w-full h-64 object-cover" playsInline muted />
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-          <div className="w-3/4 h-16 border-2 border-primary rounded-lg bg-primary/10">
-            <div className="h-full w-full flex items-center justify-center">
-              <ScanLine className="h-6 w-6 text-primary animate-pulse" />
-            </div>
+          <div className="w-48 h-48 sm:w-56 sm:h-56 border-2 border-primary rounded-xl bg-primary/10 shadow-lg flex items-center justify-center">
+            <ScanLine className="h-10 w-10 text-primary animate-pulse" />
           </div>
         </div>
       </div>
       {scanning && (
         <>
           <p className="text-xs text-muted-foreground text-center">
-            Point your camera at the barcode on the packaging
+            Point camera at the barcode or QR code on the packaging
           </p>
           <Button onClick={stopScan} variant="outline" className="w-full gap-2">
             <X className="h-4 w-4" /> Stop Camera
@@ -101,7 +101,7 @@ export function BarcodeScanner({ onDetected }: { onDetected: (code: string) => v
       {!scanning && (
         <Button onClick={startScan} variant="outline" className="w-full gap-2" disabled={starting}>
           {starting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Camera className="h-4 w-4" />}
-          {starting ? 'Starting camera...' : 'Scan with Camera'}
+          {starting ? 'Starting camera...' : 'Scan Barcode or QR Code'}
         </Button>
       )}
     </div>

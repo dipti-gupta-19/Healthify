@@ -154,32 +154,32 @@ export default function PackagedScanPage() {
 
       {/* SCAN OPTIONS GRID */}
       <div className="grid md:grid-cols-2 gap-6 mb-8">
-        {/* OPTION 1: BARCODE CAMERA SCAN */}
+        {/* OPTION 1: BARCODE & QR CODE CAMERA SCAN */}
         <Card className="p-6 border-primary/20 shadow-sm glass-card">
           <div className="flex items-center gap-2 mb-3">
             <Camera className="h-5 w-5 text-primary" />
-            <h2 className="text-base font-bold">Option 1: Camera Barcode Scanner</h2>
+            <h2 className="text-base font-bold">Option 1: Camera Barcode & QR Code Scanner</h2>
           </div>
           <p className="text-sm text-muted-foreground mb-4">
-            Point your camera at any product barcode for instant nutrition facts & additive detection.
+            Point your camera at any product barcode or QR code for instant nutrition facts & additive detection.
           </p>
           <BarcodeScanner onDetected={handleBarcodeDetected} />
         </Card>
 
-        {/* OPTION 2: MANUAL BARCODE */}
+        {/* OPTION 2: MANUAL BARCODE / QR CODE */}
         <Card className="p-6 border-primary/20 shadow-sm glass-card">
           <div className="flex items-center gap-2 mb-3">
             <Barcode className="h-5 w-5 text-primary" />
-            <h2 className="text-base font-bold">Option 2: Enter Barcode Manually</h2>
+            <h2 className="text-base font-bold">Option 2: Enter Barcode or QR Code Manually</h2>
           </div>
           <p className="text-sm text-muted-foreground mb-4">
-            Type the numbers under the barcode to look up product nutrition facts from Open Food Facts.
+            Type the code numbers or QR content to look up product nutrition facts from Open Food Facts & AI.
           </p>
           <div className="flex flex-col sm:flex-row gap-3">
             <Input
               value={barcode}
               onChange={(e) => setBarcode(e.target.value)}
-              placeholder="e.g. 3017620422003"
+              placeholder="e.g. 3017620422003 or 048500001028"
               onKeyDown={(e) => e.key === 'Enter' && barcode && handleScan('barcode')}
               className="flex-1 text-sm h-11"
             />
@@ -189,7 +189,7 @@ export default function PackagedScanPage() {
               className="gap-2 h-11 px-5 text-sm font-bold"
             >
               {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <ScanLine className="h-4 w-4" />}
-              Scan Barcode
+              Scan Code
             </Button>
           </div>
         </Card>
