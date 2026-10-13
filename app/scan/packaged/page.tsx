@@ -166,22 +166,22 @@ export default function PackagedScanPage() {
           <BarcodeScanner onDetected={handleBarcodeDetected} />
         </Card>
 
-        {/* OPTION 2: MANUAL BARCODE / QR CODE */}
+        {/* OPTION 2: MANUAL BARCODE OR PRODUCT NAME */}
         <Card className="p-6 border border-border/80 shadow-sm glass-card card-interactive flex flex-col justify-between">
           <div>
             <div className="flex items-center gap-2 mb-3">
               <Barcode className="h-5 w-5 text-primary" />
-              <h2 className="text-base font-bold">Option 2: Enter Barcode or QR Code Manually</h2>
+              <h2 className="text-base font-bold">Option 2: Enter Barcode Number or Product Name</h2>
             </div>
             <p className="text-sm text-muted-foreground mb-4">
-              Type the code numbers or QR content to look up product nutrition facts and ingredients.
+              Enter the package barcode numbers (e.g. 8901491001168) or product name (e.g. Kurkure Masala Munch).
             </p>
           </div>
           <div className="flex flex-col sm:flex-row gap-3 pt-2">
             <Input
               value={barcode}
               onChange={(e) => setBarcode(e.target.value)}
-              placeholder="e.g. 3017620422003 or 048500001028"
+              placeholder="e.g. 8901491001168 or Kurkure Masala Munch"
               onKeyDown={(e) => e.key === 'Enter' && barcode && handleScan('barcode')}
               className="flex-1 text-sm h-11"
             />
@@ -191,7 +191,7 @@ export default function PackagedScanPage() {
               className="gap-2 h-11 px-5 text-sm font-bold shrink-0"
             >
               {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <ScanLine className="h-4 w-4" />}
-              Scan Code
+              Lookup Product
             </Button>
           </div>
         </Card>

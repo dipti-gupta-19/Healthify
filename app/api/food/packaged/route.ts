@@ -5,7 +5,12 @@ import {
   type NutritionFacts,
   type UserProfile,
 } from '@/lib/nutrition';
-import { analyzeLabelFromImage, analyzePackagedIngredients, analyzeBarcodeWithAI } from '@/lib/vision';
+import {
+  analyzeLabelFromImage,
+  analyzePackagedIngredients,
+  analyzeBarcodeWithAI,
+  analyzePackagedProductByName,
+} from '@/lib/vision';
 import { extractProductNameFromLabel } from '@/lib/food-db';
 
 interface OFFProduct {
@@ -16,17 +21,7 @@ interface OFFProduct {
   categories?: string;
   ingredients_text?: string;
   ingredients?: { text: string }[];
-  nutriments?: {
-    'energy-kcal_100g'?: number;
-    'energy-kcal'?: number;
-    proteins_100g?: number;
-    carbohydrates_100g?: number;
-    fat_100g?: number;
-    fiber_100g?: number;
-    sugars_100g?: number;
-    salt_100g?: number;
-    sodium_100g?: number;
-  };
+  nutriments?: Record<string, any>;
   serving_size?: string;
   serving_quantity?: number;
 }
@@ -116,13 +111,17 @@ function isProductFound(data: { status?: number | string; product?: OFFProduct }
 }
 
 function buildProductName(p: OFFProduct): string {
-  const name = p.product_name_en || p.product_name || p.generic_name || '';
+  const name = (p.product_name_en || p.product_name || p.generic_name || '').trim();
   const brand = p.brands?.split(',')[0]?.trim();
   const isLatin = (s: string) => /^[\x00-\x7F\u00C0-\u024F]+$/.test(s.replace(/[^a-zA-Z\s'-]/g, ''));
 
   if (name && isLatin(name.replace(/[^a-zA-Z\s'-]/g, '')) && name.replace(/[^a-zA-Z]/g, '').length > 2) {
-    if (brand && !name.toLowerCase().includes(brand.toLowerCase())) {
-      return `${brand} ${name}`;
+    if (brand) {
+      const cleanBrand = brand.toLowerCase().replace(/[^a-z]/g, '');
+      const cleanName = name.toLowerCase().replace(/[^a-z]/g, '');
+      if (!cleanName.includes(cleanBrand)) {
+        return `${brand} ${name}`;
+      }
     }
     return name;
   }
@@ -140,17 +139,32 @@ function extractNutrition(p: OFFProduct): NutritionFacts {
   const n = p.nutriments || {};
   const serving = p.serving_quantity || 100;
   const scale = serving / 100;
-  const sodiumPer100g = n.sodium_100g || (n.salt_100g ? n.salt_100g * 400 : 0);
+
+  let rawSodium = n.sodium_100g ?? (n.sodium as number | undefined);
+  let sodiumMg = 0;
+  if (typeof rawSodium === 'number' && rawSodium > 0) {
+    sodiumMg = rawSodium < 10 ? Math.round(rawSodium * 1000) : Math.round(rawSodium);
+  } else if (typeof n.salt_100g === 'number' && n.salt_100g > 0) {
+    sodiumMg = Math.round(n.salt_100g * 400);
+  } else if (typeof n.salt === 'number' && n.salt > 0) {
+    sodiumMg = Math.round(n.salt * 400);
+  }
+
   const caloriesPer100g = n['energy-kcal_100g'] || n['energy-kcal'] || 0;
+  const proteinsPer100g = n.proteins_100g || (n.proteins as number) || 0;
+  const carbsPer100g = n.carbohydrates_100g || (n.carbohydrates as number) || 0;
+  const fatPer100g = n.fat_100g || (n.fat as number) || 0;
+  const fiberPer100g = n.fiber_100g || (n.fiber as number) || 0;
+  const sugarsPer100g = n.sugars_100g || (n.sugars as number) || 0;
 
   return {
     calories: Math.round(caloriesPer100g * scale),
-    protein: Math.round((n.proteins_100g || 0) * scale * 10) / 10,
-    carbs: Math.round((n.carbohydrates_100g || 0) * scale * 10) / 10,
-    fat: Math.round((n.fat_100g || 0) * scale * 10) / 10,
-    fiber: Math.round((n.fiber_100g || 0) * scale * 10) / 10,
-    sugar: Math.round((n.sugars_100g || 0) * scale * 10) / 10,
-    sodium: Math.round(sodiumPer100g * scale),
+    protein: Math.round(proteinsPer100g * scale * 10) / 10,
+    carbs: Math.round(carbsPer100g * scale * 10) / 10,
+    fat: Math.round(fatPer100g * scale * 10) / 10,
+    fiber: Math.round(fiberPer100g * scale * 10) / 10,
+    sugar: Math.round(sugarsPer100g * scale * 10) / 10,
+    sodium: Math.round(sodiumMg * scale),
   };
 }
 
@@ -160,42 +174,67 @@ function buildServingLabel(p: OFFProduct): string {
   return 'per 100g';
 }
 
+async function fetchFromUPCItemDB(barcode: string): Promise<OFFProduct | null> {
+  try {
+    const res = await fetch(`https://api.upcitemdb.com/prod/trial/lookup?upc=${barcode}`, {
+      headers: { 'User-Agent': 'HealthifyApp/2.0' },
+      signal: AbortSignal.timeout(2500),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (data.items && data.items.length > 0) {
+        const item = data.items[0];
+        return {
+          product_name: item.title,
+          brands: item.brand,
+          categories: item.category,
+        };
+      }
+    }
+  } catch {}
+  return null;
+}
+
 async function fetchFromOFF(barcodeCode: string): Promise<OFFProduct | null> {
-  const variations = [
-    barcodeCode,
-    barcodeCode.padStart(13, '0'),
-    barcodeCode.replace(/^0+/, ''),
-    `0${barcodeCode}`,
-  ];
+  const clean = barcodeCode.replace(/\D/g, '');
+  if (!clean || clean.length < 6) return null;
+
+  const variations = [clean];
+  if (clean.length === 12) variations.push(`0${clean}`);
+  if (clean.length === 13 && clean.startsWith('0')) variations.push(clean.slice(1));
   const uniqueVars = [...new Set(variations)];
 
-  for (const code of uniqueVars) {
-    try {
-      const v2Res = await fetch(
-        `https://world.openfoodfacts.org/api/v2/product/${code}?fields=product_name,product_name_en,brands,generic_name,categories,ingredients_text,ingredients,nutriments,serving_size,serving_quantity`,
-        { headers: { 'User-Agent': 'Healthify/1.0' } }
-      );
-      if (v2Res.ok) {
-        const data = await v2Res.json();
+  const headers = { 'User-Agent': 'HealthifyNutrition/2.0 (healthify.app; contact@healthify.app)' };
+  const fields = 'product_name,product_name_en,brands,generic_name,categories,ingredients_text,ingredients,nutriments,serving_size,serving_quantity';
+
+  // Fast parallel requests across world and country endpoints
+  const requests = uniqueVars.flatMap((code) => [
+    fetch(`https://world.openfoodfacts.org/api/v2/product/${code}.json?fields=${fields}`, {
+      headers,
+      signal: AbortSignal.timeout(3500),
+    }),
+    fetch(`https://in.openfoodfacts.org/api/v2/product/${code}.json?fields=${fields}`, {
+      headers,
+      signal: AbortSignal.timeout(3500),
+    }),
+  ]);
+
+  try {
+    const responses = await Promise.allSettled(requests);
+    for (const r of responses) {
+      if (r.status === 'fulfilled' && r.value.ok) {
+        const data = await r.value.json();
         if (isProductFound(data)) {
           return data.product as OFFProduct;
         }
       }
-    } catch {}
+    }
+  } catch {}
 
-    try {
-      const v0Res = await fetch(
-        `https://world.openfoodfacts.org/api/v0/product/${code}.json`,
-        { headers: { 'User-Agent': 'Healthify/1.0' } }
-      );
-      if (v0Res.ok) {
-        const data = await v0Res.json();
-        if (data.status === 1 && data.product) {
-          return data.product as OFFProduct;
-        }
-      }
-    } catch {}
-  }
+  // Fallback to UPC database
+  const upcItem = await fetchFromUPCItemDB(clean);
+  if (upcItem) return upcItem;
+
   return null;
 }
 
@@ -230,6 +269,10 @@ export async function POST(req: Request) {
     let reqText = ingredientText?.trim() || '';
     const userHint = (body as { userHint?: string }).userHint?.trim();
 
+    // Check if user entered a product name into the barcode box (e.g. "kurkure", "lays")
+    const isBarcodeQueryText = Boolean(reqBarcode && /[a-zA-Z]{3,}/.test(reqBarcode));
+    let productNameQuery = isBarcodeQueryText ? reqBarcode : (!reqBarcode && reqText && !/^\d{6,14}$/.test(reqText) && reqText.length < 60 && !reqText.includes(',') ? reqText : '');
+
     // Auto-detect barcode numbers pasted into ingredient text (e.g. 048500001028)
     if (!reqBarcode && reqText) {
       const extracted = extractBarcode(reqText);
@@ -246,45 +289,65 @@ export async function POST(req: Request) {
     let extraHarmful: string[] = [];
     let extraBeneficial: string[] = [];
 
-    // If user provided an autocorrect hint (e.g., "its tropicana 100% orange h=juice"), use Gemini AI to re-analyze from the hint
+    // If user provided a product name query (or autocorrect hint)
     if (userHint && userHint.length > 2) {
-      const hintAiResult = await analyzeBarcodeWithAI(reqBarcode || '', userHint);
+      const hintAiResult = await analyzePackagedProductByName(userHint) || await analyzeBarcodeWithAI(reqBarcode || '', userHint);
       if (hintAiResult) {
         foodName = hintAiResult.productName;
         ingredients = hintAiResult.ingredients;
         facts = hintAiResult.facts;
       } else {
-        foodName = userHint.replace(/^its\s+/i, '').replace(/\b(h=juice|h=)\b/gi, 'juice').trim();
+        foodName = userHint.replace(/^its\s+/i, '').trim();
         foodName = foodName.charAt(0).toUpperCase() + foodName.slice(1);
-        ingredients = parseIngredients(reqText) ;
+        ingredients = parseIngredients(reqText);
         if (!ingredients.length) {
-          ingredients = ['100% Pasteurized Orange Juice', 'Ascorbic Acid (Vitamin C)'];
+          ingredients = ['rice meal', 'vegetable oil', 'corn meal', 'gram meal', 'spices', 'salt'];
         }
         facts = estimateFromIngredients(ingredients);
-        if (facts.calories <= 0 || facts.calories === 250) {
-          facts = { calories: 110, protein: 2, carbs: 26, fat: 0, fiber: 0, sugar: 22, sodium: 0 };
-        }
+      }
+    } else if (productNameQuery) {
+      // User typed a commercial product name (e.g. "Kurkure Masala Munch")
+      const productAi = await analyzePackagedProductByName(productNameQuery);
+      if (productAi) {
+        foodName = productAi.productName;
+        ingredients = productAi.ingredients;
+        facts = productAi.facts;
+      } else {
+        foodName = productNameQuery.charAt(0).toUpperCase() + productNameQuery.slice(1);
+        ingredients = ['wheat flour', 'vegetable oil', 'salt', 'seasoning'];
+        facts = { calories: 450, protein: 6, carbs: 55, fat: 22, fiber: 2, sugar: 4, sodium: 480 };
       }
     } else if (reqBarcode) {
       const cleanBarcode = extractBarcode(reqBarcode);
 
-      // Check AI barcode lookup first for exact commercial product match
-      const aiBarcodeProduct = await analyzeBarcodeWithAI(cleanBarcode);
-      if (aiBarcodeProduct && !aiBarcodeProduct.productName.startsWith('Packaged Food Item')) {
-        foodName = aiBarcodeProduct.productName;
-        ingredients = aiBarcodeProduct.ingredients;
-        facts = aiBarcodeProduct.facts;
-      } else {
-        const p = await fetchFromOFF(cleanBarcode);
-        if (p) {
-          foodName = buildProductName(p);
-          facts = extractNutrition(p);
-          categories = p.categories;
-          servingLabel = buildServingLabel(p);
-          ingredients = parseIngredients(p.ingredients_text || '');
-          if (ingredients.length === 0 && p.ingredients) {
-            ingredients = p.ingredients.map((i) => i.text);
+      // STEP 1: Query OpenFoodFacts first (the authoritative, official barcode registry)
+      const p = await fetchFromOFF(cleanBarcode);
+      if (p) {
+        foodName = buildProductName(p);
+        facts = extractNutrition(p);
+        categories = p.categories;
+        servingLabel = buildServingLabel(p);
+        ingredients = parseIngredients(p.ingredients_text || '');
+        if (ingredients.length === 0 && p.ingredients) {
+          ingredients = p.ingredients.map((i) => i.text);
+        }
+        // If OpenFoodFacts product record lacks ingredients, enrich via commercial product database
+        if (ingredients.length === 0) {
+          const enriched = await analyzePackagedProductByName(foodName);
+          if (enriched && enriched.ingredients.length > 0) {
+            ingredients = enriched.ingredients;
+            if (facts.calories <= 0 && enriched.facts.calories > 0) {
+              facts = enriched.facts;
+            }
           }
+        }
+      } else {
+        // STEP 2: If not in OpenFoodFacts, check AI fallback
+        const aiBarcodeProduct = await analyzeBarcodeWithAI(cleanBarcode);
+        if (aiBarcodeProduct && !aiBarcodeProduct.productName.startsWith('Packaged Food Item')) {
+          foodName = aiBarcodeProduct.productName;
+          ingredients = aiBarcodeProduct.ingredients;
+          facts = aiBarcodeProduct.facts;
         } else {
           foodName = `Packaged Food Item (#${cleanBarcode.slice(-4)})`;
           ingredients = ['wheat flour', 'sugar', 'vegetable oil', 'preservatives'];

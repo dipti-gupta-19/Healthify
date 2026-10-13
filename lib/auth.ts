@@ -61,11 +61,13 @@ export async function getUserFromRequest(req: Request): Promise<{ userId: string
   return null;
 }
 
+let hasMigrated = false;
+
 /**
  * Ensures the default demo user exists in MongoDB and migrates any old 'demo-user' data to it.
  */
 export async function ensureDemoUserAndMigrate() {
-  if (!process.env.MONGODB_URI) return;
+  if (hasMigrated || !process.env.MONGODB_URI) return;
   try {
     const db = await getDb();
     
@@ -102,6 +104,7 @@ export async function ensureDemoUserAndMigrate() {
       { userId: 'demo-user' },
       { $set: { userId: DEMO_USER_ID } }
     );
+    hasMigrated = true;
   } catch (err) {
     console.error('Failed to migrate demo user:', err);
   }

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Input } from '@/components/ui/input';
@@ -19,6 +19,12 @@ interface AuthModalProps {
 export function AuthModal({ open, onOpenChange, onSuccess, defaultTab = 'login' }: AuthModalProps) {
   const [tab, setTab] = useState<'login' | 'register'>(defaultTab);
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (open) {
+      setTab(defaultTab);
+    }
+  }, [open, defaultTab]);
 
   // Form states
   const [loginEmail, setLoginEmail] = useState('');
@@ -41,12 +47,16 @@ export function AuthModal({ open, onOpenChange, onSuccess, defaultTab = 'login' 
       return;
     }
     setLoading(true);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 12000);
     try {
       const res = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: loginEmail, password: loginPassword }),
+        signal: controller.signal,
       });
+      clearTimeout(timeoutId);
       const data = await res.json();
       if (!res.ok) {
         throw new Error(data.error || 'Login failed');
@@ -54,8 +64,13 @@ export function AuthModal({ open, onOpenChange, onSuccess, defaultTab = 'login' 
       toast.success(`Welcome back, ${data.user.name}!`);
       onSuccess(data);
       onOpenChange(false);
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to sign in');
+    } catch (err: any) {
+      clearTimeout(timeoutId);
+      if (err.name === 'AbortError') {
+        toast.error('Request timed out. Please check your internet or database connection.');
+      } else {
+        toast.error(err instanceof Error ? err.message : 'Failed to sign in');
+      }
     } finally {
       setLoading(false);
     }
@@ -72,12 +87,16 @@ export function AuthModal({ open, onOpenChange, onSuccess, defaultTab = 'login' 
       return;
     }
     setLoading(true);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 12000);
     try {
       const res = await fetch('/api/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: regName, email: regEmail, password: regPassword }),
+        signal: controller.signal,
       });
+      clearTimeout(timeoutId);
       const data = await res.json();
       if (!res.ok) {
         throw new Error(data.error || 'Registration failed');
@@ -85,8 +104,13 @@ export function AuthModal({ open, onOpenChange, onSuccess, defaultTab = 'login' 
       toast.success(`Account created successfully! Welcome, ${data.user.name}.`);
       onSuccess(data);
       onOpenChange(false);
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to create account');
+    } catch (err: any) {
+      clearTimeout(timeoutId);
+      if (err.name === 'AbortError') {
+        toast.error('Request timed out. Please check your internet or database connection.');
+      } else {
+        toast.error(err instanceof Error ? err.message : 'Failed to create account');
+      }
     } finally {
       setLoading(false);
     }

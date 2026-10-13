@@ -192,45 +192,40 @@ export async function analyzeBarcodeWithAI(barcode: string, userHint?: string): 
   }
 
   if (!hasGeminiKey() && !userHint) {
-    if (userHint) {
-      const lower = (userHint as string).toLowerCase();
-      if (lower.includes('tropicana') || lower.includes('orange')) {
-        return {
-          productName: 'Tropicana 100% Orange Juice',
-          ingredients: ['100% Pasteurized Orange Juice', 'Ascorbic Acid (Vitamin C)'],
-          facts: { calories: 110, protein: 2, carbs: 26, fat: 0, fiber: 0, sugar: 22, sodium: 0 },
-        };
-      }
-    }
     return null;
   }
 
+  // Only query AI with barcode if there is a hint OR strict confidence check
   const hintContext = userHint
-    ? `The user stated this product is: "${userHint}". Use this hint to identify the exact commercial food product, brand, real ingredients, and standard nutrition facts.`
-    : `Identify the commercial packaged food product for UPC/EAN barcode number "${clean}".`;
+    ? `The user stated this product is: "${userHint}". Identify this exact commercial food product, its manufacturer brand, real ingredients from label, and standard nutrition facts.`
+    : `What commercial packaged food product corresponds to UPC/EAN barcode number "${clean}"? If you are not completely confident of the exact product, set "found": false. Do NOT make up or guess random products.`;
 
   const prompt = `${hintContext}
 Return ONLY a single JSON object with no markdown fences:
 {
-  "productName": "exact product name e.g. Tropicana 100% Orange Juice",
-  "ingredients": ["100% Pasteurized Orange Juice", "Ascorbic Acid (Vitamin C)"],
-  "calories": 110,
-  "protein": 2,
-  "carbs": 26,
-  "fat": 0,
-  "fiber": 0,
-  "sugar": 22,
-  "sodium": 0
+  "found": true,
+  "productName": "Exact brand and product name e.g. Kurkure Masala Munch or Lay's Classic",
+  "ingredients": ["ingredient 1", "ingredient 2"],
+  "calories": 500,
+  "protein": 6,
+  "carbs": 55,
+  "fat": 30,
+  "fiber": 2,
+  "sugar": 2,
+  "sodium": 650
 }`;
 
   if (hasGeminiKey()) {
     const { parsed } = await geminiTextJson(prompt);
-    if (parsed && (parsed.productName || parsed.name)) {
-      return {
-        productName: String(parsed.productName || parsed.name),
-        ingredients: Array.isArray(parsed.ingredients) ? parsed.ingredients.map(String) : [],
-        facts: factsFromParsed(parsed),
-      };
+    if (parsed && parsed.found !== false && (parsed.productName || parsed.name)) {
+      const name = String(parsed.productName || parsed.name);
+      if (name && !name.toLowerCase().includes('unknown') && !name.toLowerCase().includes('not found')) {
+        return {
+          productName: name,
+          ingredients: Array.isArray(parsed.ingredients) ? parsed.ingredients.map(String) : [],
+          facts: factsFromParsed(parsed),
+        };
+      }
     }
   }
 
@@ -250,7 +245,78 @@ Return ONLY a single JSON object with no markdown fences:
         facts: { calories: 100, protein: 1, carbs: 25, fat: 0, fiber: 1, sugar: 20, sodium: 35 },
       };
     }
+    if (lower.includes('kurkure')) {
+      return {
+        productName: 'Kurkure Masala Munch',
+        ingredients: ['Rice Meal', 'Edible Vegetable Oil (Palmolein)', 'Corn Meal', 'Gram Meal', 'Spices & Condiments', 'Salt', 'Sugar', 'Tartaric Acid', 'Citric Acid'],
+        facts: { calories: 554, protein: 6, carbs: 57.5, fat: 33.4, fiber: 2, sugar: 1.4, sodium: 694 },
+      };
+    }
   }
 
   return null;
 }
+
+/**
+ * Recognizes commercial packaged food by product name or brand (e.g. "Kurkure Masala Munch", "Lays Magic Masala", "Oreo")
+ */
+export async function analyzePackagedProductByName(productName: string): Promise<BarcodeAIProduct | null> {
+  const clean = productName.trim();
+  if (!clean || clean.length < 2) return null;
+
+  // Local fast matches for common snacks
+  const lower = clean.toLowerCase();
+  if (lower.includes('kurkure') && (lower.includes('masala') || lower.includes('munch'))) {
+    return {
+      productName: 'Kurkure Masala Munch',
+      ingredients: ['Rice Meal', 'Edible Vegetable Oil (Palmolein)', 'Corn Meal', 'Gram Meal', 'Spices & Condiments (Chilli, Onion, Garlic, Turmeric, Coriander)', 'Salt', 'Sugar', 'Tartaric Acid', 'Citric Acid'],
+      facts: { calories: 554, protein: 6, carbs: 57.5, fat: 33.4, fiber: 2, sugar: 1.4, sodium: 694 },
+    };
+  }
+  if (lower.includes('lays') || lower.includes("lay's")) {
+    if (lower.includes('magic') || lower.includes('masala')) {
+      return {
+        productName: "Lay's India's Magic Masala",
+        ingredients: ['Potato', 'Edible Vegetable Oil (Palmolein)', 'Spices & Condiments (Onion Powder, Chilli Powder, Dry Mango Powder, Coriander Powder, Black Pepper)', 'Salt', 'Sugar', 'Citric Acid'],
+        facts: { calories: 544, protein: 7, carbs: 52, fat: 34, fiber: 3.5, sugar: 2, sodium: 590 },
+      };
+    }
+    if (lower.includes('classic') || lower.includes('salted')) {
+      return {
+        productName: "Lay's Classic Salted",
+        ingredients: ['Potato', 'Edible Vegetable Oil (Palmolein)', 'Salt'],
+        facts: { calories: 540, protein: 6.8, carbs: 53.2, fat: 33.3, fiber: 4, sugar: 0.5, sodium: 510 },
+      };
+    }
+  }
+
+  if (!hasGeminiKey()) return null;
+
+  const prompt = `You are an expert food scientist and grocery database.
+Identify the commercial packaged food product "${clean}".
+Provide the official commercial brand name, full product name, the real ingredient list from the packaging label, and standard nutrition facts per 100g.
+
+Return ONLY a single valid JSON object:
+{
+  "productName": "Brand + Product Name (e.g. Kurkure Masala Munch)",
+  "ingredients": ["ingredient 1", "ingredient 2", "ingredient 3"],
+  "calories": 554,
+  "protein": 6,
+  "carbs": 57.5,
+  "fat": 33.4,
+  "fiber": 2,
+  "sugar": 1.4,
+  "sodium": 694
+}`;
+
+  const { parsed } = await geminiTextJson(prompt);
+  if (parsed && (parsed.productName || parsed.name)) {
+    return {
+      productName: String(parsed.productName || parsed.name),
+      ingredients: Array.isArray(parsed.ingredients) ? parsed.ingredients.map(String) : [],
+      facts: factsFromParsed(parsed),
+    };
+  }
+  return null;
+}
+
