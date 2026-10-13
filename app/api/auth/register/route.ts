@@ -17,6 +17,13 @@ export async function POST(req: Request) {
     }
 
     const cleanEmail = email.toLowerCase().trim();
+
+    if (!process.env.MONGODB_URI) {
+      return NextResponse.json({
+        error: 'Database is not connected. Add MONGODB_URI to your .env.local file to register accounts, or sign in using the Demo Account.',
+      }, { status: 400 });
+    }
+
     const db = await getDb();
 
     const existing = await db.collection('users').findOne({ email: cleanEmail });

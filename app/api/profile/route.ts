@@ -7,6 +7,11 @@ export async function GET(req: Request) {
   try {
     const session = await getUserFromRequest(req);
     const userId = session?.userId || req.headers.get('x-user-id') || 'demo-user';
+    if (!process.env.MONGODB_URI) {
+      return NextResponse.json({ profile: null }, {
+        headers: { 'Cache-Control': 'private, max-age=10' },
+      });
+    }
     const db = await getDb();
     const profile = await db.collection('profiles').findOne({ userId });
     return NextResponse.json({ profile }, {
@@ -23,13 +28,17 @@ export async function POST(req: Request) {
     const session = await getUserFromRequest(req);
     const userId = session?.userId || req.headers.get('x-user-id') || 'demo-user';
     const body = (await req.json()) as UserProfile;
-    const db = await getDb();
-
     const cleanData = {
       ...body,
       userId,
       updatedAt: new Date().toISOString(),
     };
+
+    if (!process.env.MONGODB_URI) {
+      return NextResponse.json({ ok: true, profile: cleanData });
+    }
+
+    const db = await getDb();
 
     await db.collection('profiles').updateOne(
       { userId },

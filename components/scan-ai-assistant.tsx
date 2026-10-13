@@ -34,7 +34,7 @@ export function ScanAIAssistant({
     {
       id: 'init-1',
       sender: 'ai',
-      text: `Hello! I am Healthify's AI Nutrition Assistant. I see you scanned "${analysis.name}" (${analysis.facts.calories} kcal, ${analysis.facts.sugar ?? 0}g sugar). Ask me any questions about this meal, or autocorrect the food name if I guessed wrong!`,
+      text: `Hello! I am Healthify's Nutrition Assistant. I see you scanned "${analysis.name}" (${analysis.facts.calories} kcal, ${analysis.facts.sugar ?? 0}g sugar). Ask me any questions about this meal, or update the food name if needed!`,
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     },
   ]);
@@ -177,7 +177,7 @@ export function ScanAIAssistant({
             timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
           },
         ]);
-        toast.success(`AI re-analyzed product as "${newFoodName}"!`);
+        toast.success(`Food re-analyzed as "${newFoodName}"!`);
         setShowCorrectionForm(false);
         setCorrectedName('');
       } else {
@@ -200,13 +200,13 @@ export function ScanAIAssistant({
           </div>
           <div>
             <h3 className="font-bold text-sm sm:text-base flex items-center gap-2">
-              AI Scan Assistant
+              Nutrition Assistant
               <Badge variant="secondary" className="text-[10px] font-bold bg-primary/10 text-primary py-0">
                 Active Scan Context
               </Badge>
             </h3>
             <p className="text-xs text-muted-foreground">
-              Ask about &quot;{analysis.name}&quot; or autocorrect if AI guessed wrong
+              Ask about &quot;{analysis.name}&quot; or update food details
             </p>
           </div>
         </div>
@@ -305,7 +305,7 @@ export function ScanAIAssistant({
         {loading && (
           <div className="flex gap-2 items-center text-xs text-muted-foreground py-2">
             <Loader2 className="h-4 w-4 animate-spin text-primary" />
-            <span>AI Assistant is analyzing your question...</span>
+            <span>Assistant is analyzing your question...</span>
           </div>
         )}
       </div>
@@ -322,7 +322,7 @@ export function ScanAIAssistant({
           <Input
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder={`Ask AI anything about ${analysis.name}...`}
+            placeholder={`Ask anything about ${analysis.name}...`}
             className="flex-1 text-sm h-10 bg-background"
           />
           <Button type="submit" disabled={!input.trim() || loading} className="h-10 px-4 font-bold">

@@ -133,7 +133,7 @@ export function DashboardCalendar({
   }
 
   return (
-    <div className="mb-6 flex flex-wrap items-center justify-between gap-3 p-3.5 rounded-2xl border border-primary/20 bg-card/90 shadow-sm glass-card">
+    <div className="mb-6 flex flex-wrap items-center justify-between gap-3 p-3.5 rounded-2xl border border-border/80 bg-card/90 shadow-sm glass-card">
       <div className="flex items-center gap-2">
         <Button variant="outline" size="icon" onClick={prevDay} className="h-8 w-8 rounded-lg">
           <ChevronLeft className="h-4 w-4" />
@@ -145,7 +145,7 @@ export function DashboardCalendar({
             <Button
               variant="outline"
               size="sm"
-              className="gap-2 font-semibold text-xs border-primary/30 h-9 rounded-xl px-3 hover:border-primary"
+              className="gap-2 font-semibold text-xs border-border/80 h-9 rounded-xl px-3 hover:border-primary"
             >
               <CalendarIcon className="h-4 w-4 text-primary" />
               <span>{dateLabel}</span>
@@ -157,7 +157,7 @@ export function DashboardCalendar({
             </Button>
           </PopoverTrigger>
 
-          <PopoverContent align="center" className="w-72 p-3 shadow-xl border-2 border-primary/20 rounded-2xl">
+          <PopoverContent align="center" className="w-72 p-3 shadow-xl border border-border/80 rounded-2xl">
             <div className="flex items-center justify-between mb-3 pb-2 border-b border-border">
               <Button variant="ghost" size="icon" className="h-7 w-7" onClick={prevMonth}>
                 <ChevronLeft className="h-4 w-4" />

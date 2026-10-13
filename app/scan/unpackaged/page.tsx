@@ -170,31 +170,31 @@ export default function UnpackagedScanPage() {
   };
 
   return (
-    <div className="mx-auto max-w-7xl px-4 sm:px-8 py-8 animate-fade-in">
+    <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-6 sm:py-8 animate-fade-in">
       {/* HEADER HERO */}
       <div className="mb-8">
-        <div className="flex items-center gap-3 mb-2">
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-500 text-white shadow-md">
+        <div className="flex items-center gap-3.5 mb-2">
+          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-500 text-white shadow-md shrink-0">
             <Camera className="h-6 w-6" />
           </div>
           <div>
             <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">Unpackaged Food Scanner</h1>
             <p className="text-sm text-muted-foreground mt-0.5">
-              Snap or upload a photo of any home-cooked dish or meal. AI identifies ingredients, estimates calories, and checks your daily budget.
+              Snap or upload a photo of any home-cooked dish or meal. Identifies ingredients, estimates calories, and checks your daily budget.
             </p>
           </div>
         </div>
       </div>
 
       {/* UPLOAD & CAMERA CARD */}
-      <Card className="p-6 sm:p-8 mb-8 border-emerald-500/30 shadow-md glass-card max-w-4xl mx-auto">
+      <Card className="p-6 sm:p-8 mb-8 border border-border/80 shadow-sm glass-card max-w-4xl mx-auto">
         <div className="flex items-center gap-2 mb-4">
           <Sparkles className="h-5 w-5 text-emerald-500" />
           <h2 className="text-lg font-bold">Meal Photo Recognition</h2>
         </div>
 
         {imagePreview && (
-          <div className="mb-6 rounded-2xl overflow-hidden border-2 border-emerald-500/30 max-h-80 shadow-md">
+          <div className="mb-6 rounded-2xl overflow-hidden border border-emerald-500/30 max-h-80 shadow-md">
             <img src={imagePreview} alt="Food photo preview" className="w-full h-full object-cover" />
           </div>
         )}
@@ -204,7 +204,7 @@ export default function UnpackagedScanPage() {
             type="button"
             onClick={() => cameraInputRef.current?.click()}
             disabled={loading || imageProcessing}
-            className="flex flex-col items-center gap-3 rounded-2xl border-2 border-dashed border-emerald-500/40 p-6 sm:p-8 transition hover:border-emerald-500 hover:bg-emerald-500/5 disabled:opacity-50"
+            className="flex flex-col items-center gap-3 rounded-2xl border-2 border-dashed border-emerald-500/40 p-6 sm:p-8 transition hover:border-emerald-500 hover:bg-emerald-500/5 active:scale-98 disabled:opacity-50"
           >
             {imageProcessing ? (
               <Loader2 className="h-10 w-10 text-emerald-500 animate-spin" />
@@ -218,7 +218,7 @@ export default function UnpackagedScanPage() {
             type="button"
             onClick={() => fileInputRef.current?.click()}
             disabled={loading || imageProcessing}
-            className="flex flex-col items-center gap-3 rounded-2xl border-2 border-dashed border-emerald-500/40 p-6 sm:p-8 transition hover:border-emerald-500 hover:bg-emerald-500/5 disabled:opacity-50"
+            className="flex flex-col items-center gap-3 rounded-2xl border-2 border-dashed border-emerald-500/40 p-6 sm:p-8 transition hover:border-emerald-500 hover:bg-emerald-500/5 active:scale-98 disabled:opacity-50"
           >
             {imageProcessing ? (
               <Loader2 className="h-10 w-10 text-emerald-500 animate-spin" />
@@ -238,7 +238,7 @@ export default function UnpackagedScanPage() {
             {loading ? (
               <>
                 <Loader2 className="h-5 w-5 animate-spin" />
-                AI Analyzing Meal Photo...
+                Analyzing Meal Photo...
               </>
             ) : scanCooldown > 0 ? (
               <>Wait {scanCooldown}s (quota cooldown)</>
@@ -252,7 +252,7 @@ export default function UnpackagedScanPage() {
         )}
 
         <p className="text-xs sm:text-sm text-muted-foreground text-center">
-          Our Vision AI identifies dish name, ingredient breakdown, portion size, and profile safety score.
+          Identifies dish name, ingredient breakdown, portion size, and profile safety score.
         </p>
 
         <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" onChange={handleFile} className="hidden" />
@@ -271,21 +271,23 @@ export default function UnpackagedScanPage() {
         </button>
 
         {showOptionalInput && (
-          <Card className="p-5 mt-3 border-border shadow-sm text-left animate-slide-up">
-            <div className="flex gap-2">
+          <Card className="p-5 mt-3 border border-border/80 shadow-sm text-left animate-slide-up glass-card">
+            <div className="flex flex-col sm:flex-row gap-2.5">
               <Input
                 value={foodName}
                 onChange={(e) => setFoodName(e.target.value)}
                 placeholder="e.g. Grilled Chicken Salad, Paneer Butter Masala..."
-                className="text-sm h-11"
+                className="text-sm h-11 flex-1"
                 onKeyDown={(e) => e.key === 'Enter' && handleAnalyzeByName()}
               />
-              <Button onClick={handleVoice} variant="outline" className="h-11 w-11 p-0 shrink-0">
-                <Mic className={`h-5 w-5 ${listening ? 'text-destructive animate-pulse' : ''}`} />
-              </Button>
-              <Button onClick={() => handleAnalyzeByName()} disabled={!foodName || loading} className="h-11 px-5 font-bold text-sm">
-                Analyze
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button onClick={handleVoice} variant="outline" className="h-11 w-11 p-0 shrink-0" aria-label="Voice input">
+                  <Mic className={`h-5 w-5 ${listening ? 'text-destructive animate-pulse' : ''}`} />
+                </Button>
+                <Button onClick={() => handleAnalyzeByName()} disabled={!foodName || loading} className="h-11 px-5 font-bold text-sm flex-1 sm:flex-initial">
+                  Analyze
+                </Button>
+              </div>
             </div>
           </Card>
         )}
@@ -295,7 +297,7 @@ export default function UnpackagedScanPage() {
       {loading && (
         <Card className="p-8 text-center border-emerald-500/30 bg-emerald-500/5 animate-fade-in max-w-4xl mx-auto mb-8">
           <Loader2 className="h-8 w-8 animate-spin text-emerald-500 mx-auto mb-3" />
-          <p className="text-base font-bold text-foreground">AI is inspecting your meal photo...</p>
+          <p className="text-base font-bold text-foreground">Inspecting your meal photo...</p>
           <p className="text-sm text-muted-foreground mt-1">Identifying dish ingredients, calories, macros, and profile fit.</p>
         </Card>
       )}

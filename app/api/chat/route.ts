@@ -77,7 +77,7 @@ function buildContextSummary(
   return lines.join('\n');
 }
 
-const SYSTEM_PROMPT = `You are Healthify's dedicated AI Nutrition & Food Assistant.
+const SYSTEM_PROMPT = `You are Healthify's dedicated Nutrition & Food Advisor.
 Your role is to act as a warm, knowledgeable personal nutritionist answering questions about the user's specific logged meals, nutrition targets, health status, recipes, and dietary goals.
 
 STRICT INSTRUCTIONS:
@@ -112,19 +112,26 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'message is required' }, { status: 400 });
     }
 
-    const db = await getDb();
+    let dbMeals: any[] = [];
+    let profileDoc: any = null;
 
-    // Fetch user meals & profile
-    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-    const [dbMeals, profileDoc] = await Promise.all([
-      db
-        .collection('meals')
-        .find({ userId, loggedAt: { $gte: sevenDaysAgo.toISOString() } })
-        .sort({ loggedAt: -1 })
-        .limit(50)
-        .toArray(),
-      db.collection('profiles').findOne({ userId }),
-    ]);
+    if (process.env.MONGODB_URI) {
+      try {
+        const db = await getDb();
+        const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+        [dbMeals, profileDoc] = await Promise.all([
+          db
+            .collection('meals')
+            .find({ userId, loggedAt: { $gte: sevenDaysAgo.toISOString() } })
+            .sort({ loggedAt: -1 })
+            .limit(50)
+            .toArray(),
+          db.collection('profiles').findOne({ userId }),
+        ]);
+      } catch (dbErr) {
+        console.warn('MongoDB query bypassed in chat:', dbErr);
+      }
+    }
 
     const clientMeals = Array.isArray(body.localMeals) ? body.localMeals : [];
     const allMealsMap = new Map<string, LoggedMeal>();

@@ -79,7 +79,7 @@ export async function POST(req: Request) {
     }
 
     if (!imageBase64 && !foodName?.trim()) {
-      return NextResponse.json({ error: 'Upload a food photo — AI will identify the dish automatically.' }, { status: 400 });
+      return NextResponse.json({ error: 'Upload a food photo to identify the dish automatically.' }, { status: 400 });
     }
 
     let resolvedName = '';
@@ -167,7 +167,7 @@ export async function POST(req: Request) {
 
     if (identifiedBy === 'ai') {
       const methodNote = cookingMethods.length ? ` Cooked: ${cookingMethods.join(', ')}.` : '';
-      analysis.recommendation = `AI identified from your photo: "${resolvedName}"${cuisine ? ` (${cuisine})` : ''}.${methodNote} Nutrition estimated for the portion shown.`;
+      analysis.recommendation = `Identified from your photo: "${resolvedName}"${cuisine ? ` (${cuisine})` : ''}.${methodNote} Nutrition estimated for the portion shown.`;
       if (analysis.verdict === 'great' || analysis.verdict === 'good') {
         analysis.quickSummary = analysis.quickSummary || 'Good fit for your plan — enjoy this portion.';
       } else if (analysis.verdict === 'poor') {

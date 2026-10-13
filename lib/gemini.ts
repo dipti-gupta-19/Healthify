@@ -112,7 +112,7 @@ function toUserFriendlyError(raw: string): string {
     return 'Invalid image data — re-upload the photo and try again.';
   }
   if (raw.includes('Could not parse AI response')) {
-    return 'AI responded but format was invalid — click Scan & Analyze once more.';
+    return 'Analysis response format was invalid — click Scan & Analyze once more.';
   }
   if (raw && raw !== 'all models failed' && raw !== 'empty AI response') {
     return `Gemini error: ${raw.slice(0, 160)}`;

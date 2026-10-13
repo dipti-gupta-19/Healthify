@@ -11,6 +11,16 @@ export async function GET(req: Request) {
       return NextResponse.json({ user: null, profile: null });
     }
 
+    if (!process.env.MONGODB_URI) {
+      if (session.userId === 'demo-user') {
+        return NextResponse.json({
+          user: { userId: 'demo-user', email: 'demo@healthify.com', name: 'Demo User' },
+          profile: null,
+        });
+      }
+      return NextResponse.json({ user: null, profile: null });
+    }
+
     const db = await getDb();
     const user = await db.collection('users').findOne({ userId: session.userId });
     if (!user) {

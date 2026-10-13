@@ -205,7 +205,7 @@ export function FoodCard({
   };
 
   return (
-    <Card className={`overflow-hidden border-2 ${verdict.border}`}>
+    <Card className={`overflow-hidden border-2 glass-card shadow-sm ${verdict.border}`}>
       {/* Header */}
       <div className={`flex items-center gap-3 p-4 ${verdict.bg}`}>
         <span className="text-4xl">{analysis.emoji}</span>

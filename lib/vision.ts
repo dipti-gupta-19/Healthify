@@ -126,7 +126,7 @@ export async function analyzeFoodFromImage(
 
   return {
     result: null,
-    error: error || 'AI could not analyze this photo. Try again in a few moments.',
+    error: error || 'Could not analyze this photo. Try again in a few moments.',
   };
 }
 

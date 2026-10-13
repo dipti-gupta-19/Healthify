@@ -94,14 +94,14 @@ export function AuthModal({ open, onOpenChange, onSuccess, defaultTab = 'login' 
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[425px] overflow-hidden p-0 border-2 border-primary/20 shadow-2xl">
+      <DialogContent className="w-[94vw] sm:max-w-[425px] overflow-hidden p-0 border border-border/80 shadow-2xl rounded-2xl">
         <div className="bg-gradient-to-br from-primary/10 via-primary/5 to-background p-6 border-b border-border/50 text-center">
           <div className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-md mb-3">
             <Leaf className="h-6 w-6" />
           </div>
           <DialogTitle className="text-xl font-bold">Welcome to Healthify</DialogTitle>
           <DialogDescription className="text-xs text-muted-foreground mt-1">
-            Sign in or create an account to save your health profile in MongoDB
+            Sign in or create an account to sync your health profile and logged meals
           </DialogDescription>
         </div>
 
@@ -120,7 +120,7 @@ export function AuthModal({ open, onOpenChange, onSuccess, defaultTab = 'login' 
               <div className="mb-4 p-3 rounded-xl bg-secondary/50 border border-border text-xs flex items-center justify-between">
                 <div>
                   <span className="font-semibold block text-foreground flex items-center gap-1">
-                    <KeyRound className="h-3.5 w-3.5 text-primary" /> Legacy Data Account
+                    <KeyRound className="h-3.5 w-3.5 text-primary" /> Demo Account
                   </span>
                   <span className="text-muted-foreground">demo@healthify.com / password123</span>
                 </div>
