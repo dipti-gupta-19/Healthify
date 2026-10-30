@@ -30,8 +30,10 @@ next-env.d.ts
 *.pem
 *.key
 *.cert
+*.crt
 *.p12
 *.pfx
+/certificates/
 
 # ========================
 # AWS / Cloud

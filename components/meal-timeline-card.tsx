@@ -42,6 +42,7 @@ export function MealTimelineCard({
   const [showFeedback, setShowFeedback] = useState(false);
   const [symptoms, setSymptoms] = useState<FeedbackSymptom[]>([]);
   const [liked, setLiked] = useState<boolean | null>(null);
+  const [feedbackNotes, setFeedbackNotes] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
   const hasFeedback = Boolean(meal.feedback);
@@ -68,6 +69,7 @@ export function MealTimelineCard({
           mealId: mealId(meal),
           symptoms: finalSymptoms,
           severity,
+          notes: feedbackNotes,
           liked: isLiked && finalSymptoms[0] === 'none',
         }),
       });
@@ -235,6 +237,9 @@ export function MealTimelineCard({
                   Symptoms: {meal.feedback.symptoms.filter((s) => s !== 'none').join(', ') || 'Not enjoyed'}
                 </p>
               )}
+              {meal.feedback.notes && (
+                <p className="mt-1 text-muted-foreground italic">"{meal.feedback.notes}"</p>
+              )}
               <Button variant="link" size="sm" className="h-auto p-0 mt-1 text-xs" onClick={() => setShowFeedback(true)}>
                 Update feedback
               </Button>
@@ -280,6 +285,16 @@ export function MealTimelineCard({
                 {s.label}
               </button>
             ))}
+          </div>
+          <div className="space-y-1">
+            <p className="text-xs text-muted-foreground">Any notes? (optional)</p>
+            <textarea
+              value={feedbackNotes}
+              onChange={(e) => setFeedbackNotes(e.target.value)}
+              placeholder="e.g. felt full, stomach upset after an hour..."
+              rows={2}
+              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-xs resize-none focus:outline-none focus:ring-1 focus:ring-primary/50 placeholder:text-muted-foreground"
+            />
           </div>
           <div className="flex gap-2">
             <Button size="sm" onClick={submitFeedback} disabled={submitting} className="flex-1">

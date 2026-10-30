@@ -179,40 +179,134 @@ export interface BarcodeAIProduct {
   facts: NutritionFacts;
 }
 
+/** GS1 company prefix → brand name (reference metadata only — no product data stored here) */
+const GS1_BRAND_PREFIXES: Record<string, string> = {
+  '8901063': 'Britannia', '8901719': 'Parle', '8901764': 'ITC',
+  '8901030': 'Nestle India', '8901058': 'Cadbury (Mondelez India)',
+  '8901259': 'PepsiCo India', '8901600': 'Haldiram', '8904323': 'Amul',
+  '8901396': 'Marico', '8906011': 'Dabur', '8906002': 'Patanjali',
+  '8901514': 'MTR Foods', '8904010': 'Sunfeast (ITC)',
+  '0048500': 'Tropicana', '0028400': 'Frito-Lay US',
+};
+
+function getBrandFromBarcode(barcode: string): string {
+  const clean = barcode.replace(/\D/g, '');
+  for (const [prefix, brand] of Object.entries(GS1_BRAND_PREFIXES)) {
+    if (clean.startsWith(prefix)) return brand;
+  }
+  return '';
+}
+
+/**
+ * Runtime lookup from free barcode databases (no API keys required).
+ * Returns a partial product record if found — name/brand only (nutrition comes from AI).
+ */
+async function fetchFromExternalBarcodeDB(barcode: string): Promise<{ name: string; brand?: string } | null> {
+  const clean = barcode.replace(/\D/g, '');
+  const headers = { 'User-Agent': 'Healthify/2.0 (healthify-app)' };
+
+  // --- Open EAN (free, no key) ---
+  try {
+    const res = await fetch(
+      `https://openean.kaufkauf.net/?ean=${clean}&cmd=request&lang=en`,
+      { headers, signal: AbortSignal.timeout(4000) }
+    );
+    if (res.ok) {
+      const text = await res.text();
+      // Response is plain text: "productname=...\nproducer=..."
+      const nameMatch = text.match(/productname=(.+)/i);
+      const brandMatch = text.match(/producer=(.+)/i);
+      const name = nameMatch?.[1]?.trim();
+      if (name && name !== 'Request Error' && name.length > 2) {
+        console.log(`[barcode] Open EAN found: ${name}`);
+        return { name, brand: brandMatch?.[1]?.trim() };
+      }
+    }
+  } catch { }
+
+  // --- EAN-Search.org (free tier, 100 req/day) ---
+  try {
+    const res = await fetch(
+      `https://www.ean-search.org/perl/ean-search.pl?q=${clean}&token=free`,
+      { headers, signal: AbortSignal.timeout(4000) }
+    );
+    if (res.ok) {
+      const data = await res.json();
+      const item = Array.isArray(data) ? data[0] : data?.product?.[0];
+      if (item?.name && item.name.length > 2) {
+        console.log(`[barcode] EAN-Search found: ${item.name}`);
+        return { name: item.name, brand: item.issuingCountry };
+      }
+    }
+  } catch { }
+
+  // --- Go UPC (free tier) ---
+  try {
+    const res = await fetch(
+      `https://go-upc.com/api/v1/code/${clean}`,
+      { headers, signal: AbortSignal.timeout(4000) }
+    );
+    if (res.ok) {
+      const data = await res.json();
+      if (data?.product?.name) {
+        console.log(`[barcode] Go-UPC found: ${data.product.name}`);
+        return { name: data.product.name, brand: data.product.brand };
+      }
+    }
+  } catch { }
+
+  return null;
+}
+
 export async function analyzeBarcodeWithAI(barcode: string, userHint?: string): Promise<BarcodeAIProduct | null> {
   const clean = barcode.replace(/\D/g, '');
 
-  // Exact known UPC check for 048500001028 (Tropicana 100% Orange Juice)
-  if (clean.includes('048500001028') || clean.includes('48500001028') || clean === '48500001028') {
-    return {
-      productName: 'Tropicana 100% Orange Juice',
-      ingredients: ['100% Pasteurized Orange Juice', 'Ascorbic Acid (Vitamin C)'],
-      facts: { calories: 110, protein: 2, carbs: 26, fat: 0, fiber: 0, sugar: 22, sodium: 0 },
-    };
+  if (!hasGeminiKey() && !userHint) return null;
+
+  // STEP 1: Identify brand from GS1 prefix (no hardcoded product data — just company metadata)
+  const brandFromPrefix = getBrandFromBarcode(clean);
+  const isIndian = clean.startsWith('890');
+
+  // STEP 2: Try free barcode databases at runtime to get the product name
+  let runtimeName: string | undefined;
+  let runtimeBrand: string | undefined;
+  const dbResult = await fetchFromExternalBarcodeDB(clean);
+  if (dbResult) {
+    runtimeName = dbResult.name;
+    runtimeBrand = dbResult.brand || brandFromPrefix;
   }
 
-  if (!hasGeminiKey() && !userHint) {
-    return null;
-  }
+  // STEP 3: Build AI prompt enriched with all available runtime context
+  const productHint = runtimeName
+    ? `The product name from a barcode registry is: "${runtimeName}"${runtimeBrand ? ` (brand: ${runtimeBrand})` : ''}. Use this to identify the exact product.`
+    : userHint
+      ? `The user identifies this as: "${userHint}".`
+      : brandFromPrefix
+        ? `GS1 prefix ${clean.slice(0, 7)} identifies the manufacturer as "${brandFromPrefix}".`
+        : '';
 
-  // Only query AI with barcode if there is a hint OR strict confidence check
-  const hintContext = userHint
-    ? `The user stated this product is: "${userHint}". Identify this exact commercial food product, its manufacturer brand, real ingredients from label, and standard nutrition facts.`
-    : `What commercial packaged food product corresponds to UPC/EAN barcode number "${clean}"? If you are not completely confident of the exact product, set "found": false. Do NOT make up or guess random products.`;
+  const context = userHint
+    ? `User hint: "${userHint}". ${productHint}`
+    : runtimeName
+      ? `Barcode ${clean}: ${productHint} Provide exact ingredients from label and nutrition facts per 100g.`
+      : brandFromPrefix
+        ? `Barcode ${clean} is a ${isIndian ? 'Indian' : ''} product from "${brandFromPrefix}". Identify the exact product variant and provide real label ingredients and nutrition per 100g.`
+        : `Barcode ${clean} (${isIndian ? 'Indian market' : 'unknown origin'}). Identify this packaged food product. Set "found": false if not confident.`;
 
-  const prompt = `${hintContext}
-Return ONLY a single JSON object with no markdown fences:
+  const prompt = `${context}
+
+Return ONLY valid JSON (no markdown):
 {
   "found": true,
-  "productName": "Exact brand and product name e.g. Kurkure Masala Munch or Lay's Classic",
-  "ingredients": ["ingredient 1", "ingredient 2"],
-  "calories": 500,
-  "protein": 6,
-  "carbs": 55,
-  "fat": 30,
-  "fiber": 2,
-  "sugar": 2,
-  "sodium": 650
+  "productName": "Exact Brand + Full Product Name",
+  "ingredients": ["ingredient 1", "ingredient 2", "ingredient 3"],
+  "calories": 0,
+  "protein": 0,
+  "carbs": 0,
+  "fat": 0,
+  "fiber": 0,
+  "sugar": 0,
+  "sodium": 0
 }`;
 
   if (hasGeminiKey()) {
@@ -220,6 +314,7 @@ Return ONLY a single JSON object with no markdown fences:
     if (parsed && parsed.found !== false && (parsed.productName || parsed.name)) {
       const name = String(parsed.productName || parsed.name);
       if (name && !name.toLowerCase().includes('unknown') && !name.toLowerCase().includes('not found')) {
+        console.log(`[barcode] AI identified: ${name}`);
         return {
           productName: name,
           ingredients: Array.isArray(parsed.ingredients) ? parsed.ingredients.map(String) : [],
@@ -229,29 +324,14 @@ Return ONLY a single JSON object with no markdown fences:
     }
   }
 
-  if (userHint) {
-    const lower = userHint.toLowerCase();
-    if (lower.includes('tropicana') || lower.includes('orange')) {
-      return {
-        productName: 'Tropicana 100% Orange Juice',
-        ingredients: ['100% Pasteurized Orange Juice', 'Ascorbic Acid (Vitamin C)'],
-        facts: { calories: 110, protein: 2, carbs: 26, fat: 0, fiber: 0, sugar: 22, sodium: 0 },
-      };
-    }
-    if (lower.includes('hershey') || lower.includes('chocolate')) {
-      return {
-        productName: "Hershey's Chocolate Syrup",
-        ingredients: ['High Fructose Corn Syrup', 'Water', 'Sugar', 'Cocoa', 'Potassium Sorbate', 'Salt', 'Xanthan Gum', 'Vanillin'],
-        facts: { calories: 100, protein: 1, carbs: 25, fat: 0, fiber: 1, sugar: 20, sodium: 35 },
-      };
-    }
-    if (lower.includes('kurkure')) {
-      return {
-        productName: 'Kurkure Masala Munch',
-        ingredients: ['Rice Meal', 'Edible Vegetable Oil (Palmolein)', 'Corn Meal', 'Gram Meal', 'Spices & Condiments', 'Salt', 'Sugar', 'Tartaric Acid', 'Citric Acid'],
-        facts: { calories: 554, protein: 6, carbs: 57.5, fat: 33.4, fiber: 2, sugar: 1.4, sodium: 694 },
-      };
-    }
+  // STEP 4: If AI fails but we have a runtime name, return it with zero nutrition
+  // (the route.ts will enrich nutrition via analyzePackagedProductByName)
+  if (runtimeName) {
+    return {
+      productName: runtimeBrand ? `${runtimeBrand} ${runtimeName}` : runtimeName,
+      ingredients: [],
+      facts: { calories: 0, protein: 0, carbs: 0, fat: 0, fiber: 0, sugar: 0, sodium: 0 },
+    };
   }
 
   return null;
@@ -263,33 +343,6 @@ Return ONLY a single JSON object with no markdown fences:
 export async function analyzePackagedProductByName(productName: string): Promise<BarcodeAIProduct | null> {
   const clean = productName.trim();
   if (!clean || clean.length < 2) return null;
-
-  // Local fast matches for common snacks
-  const lower = clean.toLowerCase();
-  if (lower.includes('kurkure') && (lower.includes('masala') || lower.includes('munch'))) {
-    return {
-      productName: 'Kurkure Masala Munch',
-      ingredients: ['Rice Meal', 'Edible Vegetable Oil (Palmolein)', 'Corn Meal', 'Gram Meal', 'Spices & Condiments (Chilli, Onion, Garlic, Turmeric, Coriander)', 'Salt', 'Sugar', 'Tartaric Acid', 'Citric Acid'],
-      facts: { calories: 554, protein: 6, carbs: 57.5, fat: 33.4, fiber: 2, sugar: 1.4, sodium: 694 },
-    };
-  }
-  if (lower.includes('lays') || lower.includes("lay's")) {
-    if (lower.includes('magic') || lower.includes('masala')) {
-      return {
-        productName: "Lay's India's Magic Masala",
-        ingredients: ['Potato', 'Edible Vegetable Oil (Palmolein)', 'Spices & Condiments (Onion Powder, Chilli Powder, Dry Mango Powder, Coriander Powder, Black Pepper)', 'Salt', 'Sugar', 'Citric Acid'],
-        facts: { calories: 544, protein: 7, carbs: 52, fat: 34, fiber: 3.5, sugar: 2, sodium: 590 },
-      };
-    }
-    if (lower.includes('classic') || lower.includes('salted')) {
-      return {
-        productName: "Lay's Classic Salted",
-        ingredients: ['Potato', 'Edible Vegetable Oil (Palmolein)', 'Salt'],
-        facts: { calories: 540, protein: 6.8, carbs: 53.2, fat: 33.3, fiber: 4, sugar: 0.5, sodium: 510 },
-      };
-    }
-  }
-
   if (!hasGeminiKey()) return null;
 
   const prompt = `You are an expert food scientist and grocery database.
@@ -298,15 +351,15 @@ Provide the official commercial brand name, full product name, the real ingredie
 
 Return ONLY a single valid JSON object:
 {
-  "productName": "Brand + Product Name (e.g. Kurkure Masala Munch)",
+  "productName": "Brand + Product Name",
   "ingredients": ["ingredient 1", "ingredient 2", "ingredient 3"],
-  "calories": 554,
-  "protein": 6,
-  "carbs": 57.5,
-  "fat": 33.4,
-  "fiber": 2,
-  "sugar": 1.4,
-  "sodium": 694
+  "calories": 0,
+  "protein": 0,
+  "carbs": 0,
+  "fat": 0,
+  "fiber": 0,
+  "sugar": 0,
+  "sodium": 0
 }`;
 
   const { parsed } = await geminiTextJson(prompt);
@@ -319,4 +372,5 @@ Return ONLY a single valid JSON object:
   }
   return null;
 }
+
 

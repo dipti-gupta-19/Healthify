@@ -36,6 +36,7 @@ import { MealTimeNotifier } from '@/components/meal-time-notifier';
 import { DashboardCalendar } from '@/components/dashboard-calendar';
 import { HealthCheckinBanner } from '@/components/health-checkin-banner';
 import { MonthlyNutritionTimeline } from '@/components/monthly-nutrition-timeline';
+import { FeedbackRecommendationsCard } from '@/components/feedback-recommendations-card';
 import { toast } from 'sonner';
 import { mealId, mergeMeals, readLocalMeals, removeLocalMeal, writeLocalMeals } from '@/lib/meal-history';
 import { getStoredHealthCheckin, getHealthAdvice, HealthCondition } from '@/lib/health-checkin';
@@ -410,6 +411,15 @@ export default function DashboardPage() {
 
             </Card>
           </div>
+
+          {/* FEEDBACK-DRIVEN RECOMMENDATIONS */}
+          {profile && targets && (
+            <FeedbackRecommendationsCard
+              meals={meals}
+              profile={profile}
+              targets={targets}
+            />
+          )}
         </TabsContent>
 
         {/* TAB 2: MONTHLY NUTRITION TIMELINE & FITNESS VALIDATION */}

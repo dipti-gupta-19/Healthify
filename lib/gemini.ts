@@ -90,6 +90,17 @@ function isQuotaError(raw: string): boolean {
     || lower.includes('exceeded your current');
 }
 
+function isOverloadError(status: number, raw: string): boolean {
+  return status === 503
+    || raw.toLowerCase().includes('unavailable')
+    || raw.toLowerCase().includes('high demand')
+    || raw.toLowerCase().includes('overloaded');
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function toUserFriendlyError(raw: string): string {
   const lower = raw.toLowerCase();
   if (raw.includes('401') || raw.includes('403') || lower.includes('permission_denied') || lower.includes('unauthenticated') || lower.includes('invalid_api_key')) {
@@ -113,6 +124,9 @@ function toUserFriendlyError(raw: string): string {
   }
   if (raw.includes('Could not parse AI response')) {
     return 'Analysis response format was invalid — click Scan & Analyze once more.';
+  }
+  if (raw.includes('503') || raw.toLowerCase().includes('unavailable') || raw.toLowerCase().includes('high demand')) {
+    return 'Gemini AI is temporarily overloaded. Your product data was saved — please try again in 30 seconds.';
   }
   if (raw && raw !== 'all models failed' && raw !== 'empty AI response') {
     return `Gemini error: ${raw.slice(0, 160)}`;
@@ -176,64 +190,89 @@ async function geminiGenerateParts(
 
   let lastMeaningfulError = '';
   let notFoundCount = 0;
+  const MAX_503_RETRIES = 3;
 
   for (const modelName of candidates) {
-    try {
-      const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
-          body: JSON.stringify(bodyBase),
-        },
-      );
+    // Retry loop for transient 503 overload errors
+    for (let attempt = 0; attempt <= MAX_503_RETRIES; attempt++) {
+      try {
+        const res = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
+            body: JSON.stringify(bodyBase),
+          },
+        );
 
-      if (!res.ok) {
-        const errBody = await res.text();
-        const raw = `${res.status} ${errBody.slice(0, 200)}`;
+        if (!res.ok) {
+          const errBody = await res.text();
+          const raw = `${res.status} ${errBody.slice(0, 300)}`;
 
-        if (res.status === 404) {
-          notFoundCount++;
+          if (res.status === 404) {
+            notFoundCount++;
+            lastMeaningfulError = raw;
+            break; // skip retries — this model just doesn't exist
+          }
+
+          if (res.status === 429 || isQuotaError(raw)) {
+            quotaBlockedUntil = Date.now() + 120_000;
+            if (process.env.NODE_ENV === 'development') {
+              console.error('[gemini] quota exceeded — cooldown 2 min, model:', modelName);
+            }
+            return { error: toUserFriendlyError(raw) };
+          }
+
+          if (res.status === 401 || res.status === 403) {
+            if (process.env.NODE_ENV === 'development') console.error('[gemini]', raw);
+            return { error: toUserFriendlyError(raw) };
+          }
+
+          // 503 UNAVAILABLE — Gemini high demand, retry with exponential backoff
+          if (isOverloadError(res.status, raw)) {
+            lastMeaningfulError = raw;
+            if (attempt < MAX_503_RETRIES) {
+              const waitMs = Math.pow(2, attempt) * 1000; // 1s, 2s, 4s
+              if (process.env.NODE_ENV === 'development') {
+                console.warn(`[gemini] 503 overload on ${modelName}, retrying in ${waitMs}ms (attempt ${attempt + 1}/${MAX_503_RETRIES})`);
+              }
+              await sleep(waitMs);
+              continue; // retry same model
+            }
+            // All retries exhausted for this model — try next model
+            if (process.env.NODE_ENV === 'development') {
+              console.error(`[gemini] 503 persists after ${MAX_503_RETRIES} retries on ${modelName}, trying next model`);
+            }
+            break;
+          }
+
           lastMeaningfulError = raw;
+          if (process.env.NODE_ENV === 'development') console.error('[gemini]', raw);
+          break; // non-retryable error — move to next model
+        }
+
+        const data = await res.json();
+        const text = extractCandidateText(data);
+        if (text) {
+          cachedWorkingModel = modelName;
+          return { text, model: modelName };
+        }
+
+        const blockReason = data?.promptFeedback?.blockReason || data?.candidates?.[0]?.finishReason || '';
+        lastMeaningfulError = blockReason ? `blocked: ${blockReason}` : 'empty AI response';
+        if (process.env.NODE_ENV === 'development') {
+          console.error('[gemini] empty/blocked on', modelName, lastMeaningfulError);
+        }
+        break; // no point retrying an empty/blocked response
+      } catch (e) {
+        lastMeaningfulError = e instanceof Error ? e.message : 'Network error';
+        if (process.env.NODE_ENV === 'development') console.error('[gemini] fetch failed:', lastMeaningfulError);
+        if (attempt < MAX_503_RETRIES) {
+          await sleep(Math.pow(2, attempt) * 500); // shorter backoff for network errors
           continue;
         }
-
-        lastMeaningfulError = raw;
-
-        if (res.status === 429 || isQuotaError(raw)) {
-          quotaBlockedUntil = Date.now() + 120_000;
-          if (process.env.NODE_ENV === 'development') {
-            console.error('[gemini] quota exceeded — cooldown 2 min, model:', modelName);
-          }
-          return { error: toUserFriendlyError(raw) };
-        }
-
-        if (res.status === 401 || res.status === 403) {
-          if (process.env.NODE_ENV === 'development') console.error('[gemini]', raw);
-          return { error: toUserFriendlyError(raw) };
-        }
-
-        if (process.env.NODE_ENV === 'development') console.error('[gemini]', raw);
-        continue;
+        break;
       }
-
-      const data = await res.json();
-      const text = extractCandidateText(data);
-      if (text) {
-        cachedWorkingModel = modelName;
-        return { text, model: modelName };
-      }
-
-      const blockReason = data?.promptFeedback?.blockReason || data?.candidates?.[0]?.finishReason || '';
-      lastMeaningfulError = blockReason ? `blocked: ${blockReason}` : 'empty AI response';
-      if (process.env.NODE_ENV === 'development') {
-        console.error('[gemini] empty/blocked on', modelName, lastMeaningfulError);
-      }
-      continue;
-    } catch (e) {
-      lastMeaningfulError = e instanceof Error ? e.message : 'Network error';
-      if (process.env.NODE_ENV === 'development') console.error('[gemini]', lastMeaningfulError);
-      continue;
     }
   }
 

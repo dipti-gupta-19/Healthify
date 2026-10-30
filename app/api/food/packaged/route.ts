@@ -107,7 +107,10 @@ function estimateFromIngredients(ingredients: string[]): NutritionFacts {
 }
 
 function isProductFound(data: { status?: number | string; product?: OFFProduct }): boolean {
-  return data.product != null && (data.status === 1 || data.status === 'success');
+  if (!data.product) return false;
+  // OFF returns status as number 1 (found) or 0 (not found). Some endpoints return string.
+  const s = data.status;
+  return s === 1 || s === '1' || s === 'success';
 }
 
 function buildProductName(p: OFFProduct): string {
@@ -140,30 +143,37 @@ function extractNutrition(p: OFFProduct): NutritionFacts {
   const serving = p.serving_quantity || 100;
   const scale = serving / 100;
 
-  let rawSodium = n.sodium_100g ?? (n.sodium as number | undefined);
-  let sodiumMg = 0;
-  if (typeof rawSodium === 'number' && rawSodium > 0) {
-    sodiumMg = rawSodium < 10 ? Math.round(rawSodium * 1000) : Math.round(rawSodium);
-  } else if (typeof n.salt_100g === 'number' && n.salt_100g > 0) {
-    sodiumMg = Math.round(n.salt_100g * 400);
-  } else if (typeof n.salt === 'number' && n.salt > 0) {
-    sodiumMg = Math.round(n.salt * 400);
-  }
+  // Prefer _100g fields; fall back to serving fields; then plain field name
+  const pick = (base: string): number =>
+    Number(n[`${base}_100g`]) ||
+    Number(n[`${base}_serving`]) ||
+    Number(n[base]) ||
+    0;
 
-  const caloriesPer100g = n['energy-kcal_100g'] || n['energy-kcal'] || 0;
-  const proteinsPer100g = n.proteins_100g || (n.proteins as number) || 0;
-  const carbsPer100g = n.carbohydrates_100g || (n.carbohydrates as number) || 0;
-  const fatPer100g = n.fat_100g || (n.fat as number) || 0;
-  const fiberPer100g = n.fiber_100g || (n.fiber as number) || 0;
-  const sugarsPer100g = n.sugars_100g || (n.sugars as number) || 0;
+  const caloriesPer100g =
+    pick('energy-kcal') ||
+    Math.round((pick('energy') || 0) / 4.184); // kJ → kcal
+
+  let sodiumMg = 0;
+  const rawSodium = pick('sodium');
+  if (rawSodium > 0) {
+    // OFF stores sodium in g per 100g; if < 10 it's grams, otherwise mg
+    sodiumMg = rawSodium < 10 ? Math.round(rawSodium * 1000) : Math.round(rawSodium);
+  } else {
+    const rawSalt = pick('salt');
+    if (rawSalt > 0) {
+      // salt → sodium: sodium = salt × 0.4 (g), convert to mg
+      sodiumMg = rawSalt < 10 ? Math.round(rawSalt * 400) : Math.round(rawSalt * 0.4);
+    }
+  }
 
   return {
     calories: Math.round(caloriesPer100g * scale),
-    protein: Math.round(proteinsPer100g * scale * 10) / 10,
-    carbs: Math.round(carbsPer100g * scale * 10) / 10,
-    fat: Math.round(fatPer100g * scale * 10) / 10,
-    fiber: Math.round(fiberPer100g * scale * 10) / 10,
-    sugar: Math.round(sugarsPer100g * scale * 10) / 10,
+    protein: Math.round(pick('proteins') * scale * 10) / 10,
+    carbs: Math.round(pick('carbohydrates') * scale * 10) / 10,
+    fat: Math.round(pick('fat') * scale * 10) / 10,
+    fiber: Math.round(pick('fiber') * scale * 10) / 10,
+    sugar: Math.round(pick('sugars') * scale * 10) / 10,
     sodium: Math.round(sodiumMg * scale),
   };
 }
@@ -195,46 +205,98 @@ async function fetchFromUPCItemDB(barcode: string): Promise<OFFProduct | null> {
   return null;
 }
 
+/**
+ * Fetch product from Open Food Facts with multi-level fallback:
+ * 1. OFF v2 world + India direct product lookup (parallel)
+ * 2. OFF v0 legacy API (sometimes has products v2 misses)
+ * 3. OFF search API by barcode (catches partial/variant barcodes)
+ * 4. UPC Item DB (US-centric fallback)
+ */
 async function fetchFromOFF(barcodeCode: string): Promise<OFFProduct | null> {
   const clean = barcodeCode.replace(/\D/g, '');
   if (!clean || clean.length < 6) return null;
 
-  const variations = [clean];
-  if (clean.length === 12) variations.push(`0${clean}`);
-  if (clean.length === 13 && clean.startsWith('0')) variations.push(clean.slice(1));
-  const uniqueVars = [...new Set(variations)];
+  // Build barcode variants (EAN-13 vs UPC-A differences)
+  const variations = new Set([clean]);
+  if (clean.length === 12) variations.add(`0${clean}`);
+  if (clean.length === 13 && clean.startsWith('0')) variations.add(clean.slice(1));
+  const codes = [...variations];
 
-  const headers = { 'User-Agent': 'HealthifyNutrition/2.0 (healthify.app; contact@healthify.app)' };
+  const headers = { 'User-Agent': 'Healthify/2.0 (https://github.com/healthify; contact@healthify.app)' };
   const fields = 'product_name,product_name_en,brands,generic_name,categories,ingredients_text,ingredients,nutriments,serving_size,serving_quantity';
 
-  // Fast parallel requests across world and country endpoints
-  const requests = uniqueVars.flatMap((code) => [
+  // --- STEP 1: v2 API direct lookup (world + India endpoints in parallel) ---
+  const v2Requests = codes.flatMap((code) => [
     fetch(`https://world.openfoodfacts.org/api/v2/product/${code}.json?fields=${fields}`, {
       headers,
-      signal: AbortSignal.timeout(3500),
+      signal: AbortSignal.timeout(5000),
     }),
     fetch(`https://in.openfoodfacts.org/api/v2/product/${code}.json?fields=${fields}`, {
       headers,
-      signal: AbortSignal.timeout(3500),
+      signal: AbortSignal.timeout(5000),
     }),
   ]);
 
   try {
-    const responses = await Promise.allSettled(requests);
-    for (const r of responses) {
+    const results = await Promise.allSettled(v2Requests);
+    for (const r of results) {
       if (r.status === 'fulfilled' && r.value.ok) {
         const data = await r.value.json();
         if (isProductFound(data)) {
+          console.log(`[OFF] Found via v2 API: ${(data.product as OFFProduct).product_name || codes[0]}`);
           return data.product as OFFProduct;
         }
       }
     }
-  } catch {}
+  } catch (e) {
+    console.warn('[OFF] v2 lookup error:', e);
+  }
 
-  // Fallback to UPC database
+  // --- STEP 2: v0 legacy API (different DB shard, often has Indian products) ---
+  for (const code of codes) {
+    try {
+      const res = await fetch(
+        `https://world.openfoodfacts.org/product/${code}.json`,
+        { headers, signal: AbortSignal.timeout(5000) }
+      );
+      if (res.ok) {
+        const data = await res.json();
+        if (isProductFound(data)) {
+          console.log(`[OFF] Found via v0 legacy API: ${(data.product as OFFProduct).product_name || code}`);
+          return data.product as OFFProduct;
+        }
+      }
+    } catch {}
+  }
+
+  // --- STEP 3: OFF Search API by barcode (handles variant codes & typos) ---
+  try {
+    const searchRes = await fetch(
+      `https://world.openfoodfacts.org/cgi/search.pl?code=${clean}&action=process&json=1&fields=${fields}&page_size=1`,
+      { headers, signal: AbortSignal.timeout(5000) }
+    );
+    if (searchRes.ok) {
+      const searchData = await searchRes.json();
+      if (searchData.products && Array.isArray(searchData.products) && searchData.products.length > 0) {
+        const p = searchData.products[0] as OFFProduct;
+        if (p.product_name || p.brands) {
+          console.log(`[OFF] Found via search API: ${p.product_name || p.brands || clean}`);
+          return p;
+        }
+      }
+    }
+  } catch (e) {
+    console.warn('[OFF] Search API error:', e);
+  }
+
+  // --- STEP 4: UPC Item DB fallback ---
   const upcItem = await fetchFromUPCItemDB(clean);
-  if (upcItem) return upcItem;
+  if (upcItem) {
+    console.log(`[OFF] Found via UPCItemDB: ${upcItem.product_name || clean}`);
+    return upcItem;
+  }
 
+  console.warn(`[OFF] Product not found for barcode: ${clean}`);
   return null;
 }
 
@@ -319,8 +381,10 @@ export async function POST(req: Request) {
       }
     } else if (reqBarcode) {
       const cleanBarcode = extractBarcode(reqBarcode);
+      const prefix = cleanBarcode.slice(0, 3); // GS1 prefix: 890=India, 400-440=Germany, 000-019=USA
+      const countryHint = prefix === '890' ? 'Indian' : prefix.match(/^4[0-4]\d$/) ? 'German' : prefix.match(/^0[01]\d$/) ? 'US' : '';
 
-      // STEP 1: Query OpenFoodFacts first (the authoritative, official barcode registry)
+      // STEP 1: Query OpenFoodFacts (authoritative barcode registry, 4-level fallback inside)
       const p = await fetchFromOFF(cleanBarcode);
       if (p) {
         foodName = buildProductName(p);
@@ -331,27 +395,44 @@ export async function POST(req: Request) {
         if (ingredients.length === 0 && p.ingredients) {
           ingredients = p.ingredients.map((i) => i.text);
         }
-        // If OpenFoodFacts product record lacks ingredients, enrich via commercial product database
-        if (ingredients.length === 0) {
+
+        // Enrich missing ingredients OR zero-calorie nutrition via AI
+        const needsEnrichment = ingredients.length === 0 || facts.calories <= 0;
+        if (needsEnrichment) {
           const enriched = await analyzePackagedProductByName(foodName);
-          if (enriched && enriched.ingredients.length > 0) {
-            ingredients = enriched.ingredients;
+          if (enriched) {
+            if (ingredients.length === 0 && enriched.ingredients.length > 0) {
+              ingredients = enriched.ingredients;
+            }
             if (facts.calories <= 0 && enriched.facts.calories > 0) {
               facts = enriched.facts;
             }
           }
         }
+
+        // If nutrition is still zero after enrichment, estimate from ingredients
+        if (facts.calories <= 0 && ingredients.length > 0) {
+          facts = estimateFromIngredients(ingredients);
+        }
       } else {
-        // STEP 2: If not in OpenFoodFacts, check AI fallback
-        const aiBarcodeProduct = await analyzeBarcodeWithAI(cleanBarcode);
+        // STEP 2: Not in OpenFoodFacts — try AI barcode lookup with country context
+        const aiBarcodeProduct = await analyzeBarcodeWithAI(
+          cleanBarcode,
+          countryHint ? `${countryHint} product, barcode ${cleanBarcode}` : undefined,
+        );
         if (aiBarcodeProduct && !aiBarcodeProduct.productName.startsWith('Packaged Food Item')) {
           foodName = aiBarcodeProduct.productName;
           ingredients = aiBarcodeProduct.ingredients;
           facts = aiBarcodeProduct.facts;
+          // Validate AI facts — if zeros, estimate from ingredients
+          if (facts.calories <= 0 && ingredients.length > 0) {
+            facts = estimateFromIngredients(ingredients);
+          }
         } else {
-          foodName = `Packaged Food Item (#${cleanBarcode.slice(-4)})`;
-          ingredients = ['wheat flour', 'sugar', 'vegetable oil', 'preservatives'];
-          facts = { calories: 280, protein: 4, carbs: 42, fat: 12, fiber: 2, sugar: 14, sodium: 320 };
+          // Absolute fallback — show full barcode so user can identify manually
+          foodName = `${countryHint ? countryHint + ' ' : ''}Packaged Food (Barcode: ${cleanBarcode})`;
+          ingredients = [];
+          facts = { calories: 0, protein: 0, carbs: 0, fat: 0, fiber: 0, sugar: 0, sodium: 0 };
         }
       }
     } else if (reqText || imageBase64) {
