@@ -78,12 +78,16 @@ function buildContextSummary(
 }
 
 const SYSTEM_PROMPT = `You are Healthify's dedicated Nutrition & Food Advisor.
-Your role is to act as a warm, knowledgeable personal nutritionist answering questions about the user's specific logged meals, nutrition targets, health status, recipes, and dietary goals.
+Your role is to act as a warm, knowledgeable personal nutritionist answering questions about the user's specific logged meals, scanned foods, nutrition targets, health status, recipes, and dietary goals.
 
 STRICT INSTRUCTIONS:
-1. USER SPECIFIC DATA: Use the user's profile, today's logged meals, protein targets, and today's health condition (e.g. sore throat, fever, stomach upset) to give specific, personalized, warm, and helpful answers.
-2. CONCISE & HELPFUL: Keep your response friendly, clear, and direct (in 2-4 sentences).
-3. NON-FOOD QUESTIONS: If the user asks non-food queries (coding, math, sports, general trivia), politely remind them you specialize exclusively in food, nutrition, and meal safety.`;
+1. SCANNED FOOD CONTEXT (CRITICAL): When an ACTIVE SCANNED FOOD is provided in the prompt, the user is actively viewing that exact food right now on their screen.
+   - All questions like "what is a healthier alternative?", "can I eat this?", "is this good for me?", or "how much sugar?" refer directly to this scanned food.
+   - NEVER ask "which food do you want to replace?" or "what food are you asking about?". You ALREADY know the food.
+   - When asked for a healthier alternative, immediately recommend 2 to 3 specific, realistic, and delicious healthier alternatives with brief nutritional reasons (e.g., lower sodium, no palm oil, more fiber or protein).
+2. USER PROFILE DATA: Use the user's profile, medical conditions (e.g. diabetes, hypertension), and daily targets to give personalized, safe advice.
+3. CONCISE & HELPFUL: Keep your response friendly, clear, and direct (in 2-4 sentences). Do not repeat long disclaimers.
+4. NON-FOOD QUESTIONS: If the user asks non-food queries, politely remind them you specialize exclusively in food, nutrition, and meal safety.`;
 
 export async function POST(req: Request) {
   try {
@@ -164,6 +168,32 @@ export async function POST(req: Request) {
       body.customSymptoms
     );
 
+    // BUILD ACTIVE SCANNED FOOD BLOCK IF PRESENT
+    let scannedFoodBlock = '';
+    if (body.foodContext && body.foodContext.name) {
+      const fc = body.foodContext;
+      const ingredientsStr = Array.isArray(fc.ingredients) ? fc.ingredients.join(', ') : (fc.ingredients || 'Not listed');
+      const warningsStr = Array.isArray(fc.warnings) ? fc.warnings.join('; ') : (fc.warnings || 'None');
+      const whyLimitStr = Array.isArray(fc.whyLimit) ? fc.whyLimit.join('; ') : (fc.whyLimit || fc.junkFoodLabel || 'None');
+      const alertsStr = Array.isArray(fc.dietAlerts) ? fc.dietAlerts.map((d: any) => d.message || d.label).join(', ') : 'None';
+
+      scannedFoodBlock = [
+        '',
+        '--- ACTIVE SCANNED FOOD (CURRENTLY BEING VIEWED) ---',
+        `Food Item: "${fc.name}"`,
+        `Per Serving: ${fc.calories} kcal | Protein: ${fc.protein}g | Carbs: ${fc.carbs}g | Fat: ${fc.fat}g | Sugar: ${fc.sugar ?? 0}g | Sodium: ${fc.sodium ?? 0}mg | Fiber: ${fc.fiber ?? 0}g`,
+        `Health Rating: ${fc.verdict || 'moderate'}`,
+        `Key Ingredients: ${ingredientsStr}`,
+        `Warnings & Additives: ${warningsStr}`,
+        `Concerns / Why Limit: ${whyLimitStr}`,
+        `Portion Advice: ${fc.portionAdvice || 'Standard portion'}`,
+        `Dietary Alerts: ${alertsStr}`,
+        '',
+        `RULE: The user is asking directly about "${fc.name}". If they ask for an alternative, NEVER ask "which food do you want to replace?". Recommend 2-3 specific, realistic healthier alternatives for "${fc.name}" right away!`,
+        '--------------------------------------------------',
+      ].join('\n');
+    }
+
     const historyBlock =
       Array.isArray(body.history) && body.history.length > 0
         ? '\n\nRecent conversation:\n' +
@@ -176,12 +206,13 @@ export async function POST(req: Request) {
     const fullPrompt = [
       SYSTEM_PROMPT,
       '',
+      scannedFoodBlock,
       '--- User Real-Time Data & Health Context ---',
       contextBlock,
       historyBlock,
       '',
       `User Question: ${userMessage}`,
-    ].join('\n');
+    ].filter(Boolean).join('\n');
 
     // Attempt Gemini call
     const result = await geminiTextPlain(fullPrompt);
@@ -196,6 +227,102 @@ export async function POST(req: Request) {
     const todayMeals = combinedMeals.filter((m) => new Date(m.loggedAt).toDateString() === todayStr);
     const todayTotals = sumFacts(todayMeals);
 
+    // 1. SCANNED FOOD SPECIFIC SMART FALLBACKS
+    if (body.foodContext && body.foodContext.name) {
+      const fc = body.foodContext;
+      const fName = fc.name;
+      const lowerName = fName.toLowerCase();
+
+      if (
+        lowerQ.includes('alternative') ||
+        lowerQ.includes('replace') ||
+        lowerQ.includes('substitute') ||
+        lowerQ.includes('healthy option') ||
+        lowerQ.includes('healthier') ||
+        lowerQ.includes('swap')
+      ) {
+        if (
+          lowerName.includes('monaco') ||
+          lowerName.includes('cracker') ||
+          lowerName.includes('biscuit') ||
+          lowerName.includes('chips') ||
+          lowerName.includes('wafer') ||
+          lowerName.includes('crisp') ||
+          lowerName.includes('namkeen') ||
+          lowerName.includes('snack')
+        ) {
+          return NextResponse.json({
+            reply: `Here are 3 healthier alternatives to "${fName}":\n1. **Roasted Makhana (Foxnuts)** — seasoned with rock salt and black pepper; gives identical savory crunch with 70% less sodium and zero refined flour.\n2. **Baked Multigrain or Ragi Khakhra** — rich in complex fibers and minerals without palm oil or transfats.\n3. **Roasted Pumpkin & Sunflower Seeds** — provides healthy omega fats, protein, and crunch without blood sugar spikes.`,
+          });
+        }
+
+        if (
+          lowerName.includes('soda') ||
+          lowerName.includes('cola') ||
+          lowerName.includes('juice') ||
+          lowerName.includes('drink') ||
+          lowerName.includes('shake')
+        ) {
+          return NextResponse.json({
+            reply: `Instead of "${fName}", great healthier swaps include: 1) Fresh tender coconut water with mint; 2) Unsweetened iced lemon green tea; 3) Chia-infused water with lime for hydration and omega-3s with minimal sugar.`,
+          });
+        }
+
+        if (
+          lowerName.includes('sweet') ||
+          lowerName.includes('chocolate') ||
+          lowerName.includes('candy') ||
+          lowerName.includes('cake') ||
+          lowerName.includes('cookie')
+        ) {
+          return NextResponse.json({
+            reply: `For a healthier sweet alternative to "${fName}": 1) Medjool dates stuffed with raw almonds; 2) Greek yogurt topped with fresh berries and cinnamon; 3) 85%+ dark chocolate squares for high antioxidants without blood sugar spikes.`,
+          });
+        }
+
+        if (
+          lowerName.includes('noodle') ||
+          lowerName.includes('maggi') ||
+          lowerName.includes('pasta') ||
+          lowerName.includes('ramen')
+        ) {
+          return NextResponse.json({
+            reply: `Healthier swaps for "${fName}": 1) Foxtail millet or whole wheat noodles tossed with colorful stir-fried vegetables; 2) Zucchini spirals (zoodles) with garlic and paneer/tofu; 3) Masala rolled oats with steamed sprouts.`,
+          });
+        }
+
+        return NextResponse.json({
+          reply: `Healthier alternatives to "${fName}" include whole-food options like roasted edamame, roasted spiced chickpeas (chana), or sprouted moong salad. These provide more dietary fiber, lower sodium, and sustained energy without ultra-processed additives.`,
+        });
+      }
+
+      if (lowerQ.includes('sugar')) {
+        return NextResponse.json({
+          reply: `"${fName}" contains approximately ${fc.sugar ?? 0}g of sugar per serving. For your ${activeProfile.dietType} diet and daily sugar limit (${targets.sugarMax}g), ${Number(fc.sugar) > 10 ? 'this is relatively high so enjoy in strict moderation.' : 'this fits within your daily threshold.'}`,
+        });
+      }
+
+      if (lowerQ.includes('protein')) {
+        return NextResponse.json({
+          reply: `"${fName}" provides ${fc.protein}g of protein per serving (${Math.round((fc.protein / targets.protein) * 100)}% of your ${targets.protein}g daily protein target). Consider pairing it with Greek yogurt, boiled sprouts, or roasted paneer to boost protein intake.`,
+        });
+      }
+
+      if (lowerQ.includes('safe') || lowerQ.includes('healthy') || lowerQ.includes('good') || lowerQ.includes('verdict')) {
+        const warningSnippet = Array.isArray(fc.warnings) && fc.warnings.length > 0 ? ` Note: ${fc.warnings[0]}.` : '';
+        return NextResponse.json({
+          reply: `"${fName}" has an overall health verdict of "${fc.verdict}". It packs ${fc.calories} kcal, ${fc.sugar ?? 0}g sugar, and ${fc.sodium ?? 0}mg sodium.${warningSnippet} Keep portions mindful to stay aligned with your health targets.`,
+        });
+      }
+
+      if (lowerQ.includes('calorie') || lowerQ.includes('portion') || lowerQ.includes('fit') || lowerQ.includes('budget')) {
+        return NextResponse.json({
+          reply: `"${fName}" provides ${fc.calories} kcal per serving (${Math.round((fc.calories / targets.calories) * 100)}% of your daily ${targets.calories} kcal target). ${fc.portionAdvice ? `Advice: ${fc.portionAdvice}` : 'Enjoy in moderation to stay on track!'}`,
+        });
+      }
+    }
+
+    // 2. GENERAL PROFILE & LOGGED MEALS SMART FALLBACKS
     if (lowerQ.includes('food history') || lowerQ.includes('eat today') || lowerQ.includes('what did i eat')) {
       if (todayMeals.length === 0) {
         return NextResponse.json({
