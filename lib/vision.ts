@@ -54,8 +54,12 @@ Rules:
 - Fried items (puri, pakora) add more fat
 - confidence 0-1; lowConfidence true only if truly unidentifiable`;
 
-const LABEL_PROMPT = `Read this packaged food label. Return ONLY JSON:
-{"productName":"name","ingredients":["item1"],"ingredientsText":"comma separated list"}`;
+const LABEL_PROMPT = `Read the packaged food label in this image carefully.
+Find the actual product name and the complete ingredient list only.
+Ignore nutrition facts, serving sizes, marketing text, package artwork, barcodes, and unreadable text.
+Do not guess or invent words. If the ingredient list is not readable, return empty ingredients.
+Return ONLY valid JSON:
+{"productName":"exact visible product name or Packaged Food","ingredients":["ingredient 1","ingredient 2"],"ingredientsText":"the exact visible ingredient list"}`;
 
 const INGREDIENT_ANALYSIS_PROMPT = (productName: string, ingredients: string[]) => `Analyze packaged food "${productName}".
 Ingredients: ${ingredients.join(', ')}

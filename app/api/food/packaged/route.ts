@@ -28,10 +28,17 @@ interface OFFProduct {
 
 function parseIngredients(text: string): string[] {
   if (!text) return [];
-  return text
+  const cleaned = text
+    .replace(/\r/g, '\n')
+    .replace(/[|]/g, 'I')
+    .replace(/\bingredients?\s*[:\-]?\s*/i, '')
+    .split(/\b(?:nutrition facts|allergens?|contains|may contain|distributed by|net weight)\b/i)[0];
+
+  return cleaned
     .split(/[,;()]/)
     .map((s) => s.trim())
-    .filter((s) => s.length > 1 && !/^\d+$/.test(s));
+    .filter((s) => s.length > 1 && !/^\d+$/.test(s) && !/^\d+\s*(cal|kcal|g|mg|%)$/i.test(s))
+    .slice(0, 60);
 }
 
 const INGREDIENT_NUTRITION: Record<string, Partial<NutritionFacts>> = {
@@ -434,12 +441,25 @@ export async function POST(req: Request) {
           ingredients = [];
           facts = { calories: 0, protein: 0, carbs: 0, fat: 0, fiber: 0, sugar: 0, sodium: 0 };
         }
+
+        if (facts.calories === 0 && ingredients.length > 0) {
+          facts = estimateFromIngredients(ingredients);
+        }
+      } else {
+        return NextResponse.json(
+          {
+            error: `No product was found for barcode ${cleanBarcode}. Try a clearer barcode scan or upload the ingredient label.`,
+          },
+          { status: 404 },
+        );
       }
     } else if (reqText || imageBase64) {
       let text = reqText;
       let productName: string | null = null;
 
-      if (imageBase64) {
+      // Prefer text already extracted by the browser OCR over a second AI
+      // transcription of the same label.
+      if (imageBase64 && !text) {
         const labelResult = await analyzeLabelFromImage(imageBase64, mimeType || 'image/jpeg');
         if (labelResult) {
           productName = labelResult.productName;
@@ -454,7 +474,10 @@ export async function POST(req: Request) {
       }
 
       if (!text && imageBase64) {
-        text = 'water, sugar, natural flavor, preservatives';
+        return NextResponse.json(
+          { error: 'The label could not be read. Upload a clearer ingredient-label photo.' },
+          { status: 422 },
+        );
       }
 
       if (!productName) {
@@ -467,7 +490,10 @@ export async function POST(req: Request) {
         ingredients = parseIngredients(text);
       }
       if (!ingredients.length) {
-        ingredients = ['water', 'sugar', 'natural flavors', 'citric acid'];
+        return NextResponse.json(
+          { error: 'No ingredients were detected. Paste the ingredient list or upload a clearer label photo.' },
+          { status: 422 },
+        );
       }
 
       facts = estimateFromIngredients(ingredients);

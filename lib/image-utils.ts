@@ -18,6 +18,30 @@ export async function compressImage(file: File, maxWidth = 800): Promise<string>
   }
 }
 
+export async function prepareImageForOcr(file: File): Promise<string> {
+  const dataUrl = await readAsDataUrl(file);
+  const img = await loadImage(dataUrl);
+  const maxWidth = 1800;
+  const scale = Math.min(1, maxWidth / img.width);
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.round(img.width * scale));
+  canvas.height = Math.max(1, Math.round(img.height * scale));
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return dataUrl;
+
+  ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+  const image = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  for (let i = 0; i < image.data.length; i += 4) {
+    const gray = image.data[i] * 0.299 + image.data[i + 1] * 0.587 + image.data[i + 2] * 0.114;
+    const contrast = Math.max(0, Math.min(255, (gray - 128) * 1.5 + 128));
+    image.data[i] = contrast;
+    image.data[i + 1] = contrast;
+    image.data[i + 2] = contrast;
+  }
+  ctx.putImageData(image, 0, 0);
+  return canvas.toDataURL('image/jpeg', 0.92);
+}
+
 function readAsDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
