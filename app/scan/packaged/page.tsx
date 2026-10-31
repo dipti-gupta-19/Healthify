@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import { useProfile } from '@/components/profile-context';
@@ -25,6 +25,18 @@ const FoodCard = dynamic(
   { loading: () => <div className="py-8 text-center text-sm font-medium text-muted-foreground">Loading analysis results...</div> },
 );
 
+function isUsableLabelOcr(text: string): boolean {
+  const normalized = text.replace(/\s+/g, ' ').trim();
+  if (normalized.length < 25) return false;
+
+  const hasIngredientSection = /\bingredients?\b/i.test(normalized);
+  const hasSeparators = /[,;:]/.test(normalized);
+  const words = normalized.match(/[a-z]{3,}/gi) || [];
+  const readableWords = words.filter((word) => !/^(?:the|and|with|from|food|total|amount|daily|value|serving|calories)$/i.test(word));
+
+  return hasIngredientSection && hasSeparators && readableWords.length >= 4;
+}
+
 export default function PackagedScanPage() {
   const { profile, targets, token } = useProfile();
   const router = useRouter();
@@ -35,8 +47,11 @@ export default function PackagedScanPage() {
   const [ocrLoading, setOcrLoading] = useState(false);
   const [error, setError] = useState('');
   const [labelPreview, setLabelPreview] = useState<string | null>(null);
+  const [cameraOpen, setCameraOpen] = useState(false);
   const labelInputRef = useRef<HTMLInputElement>(null);
   const labelCameraRef = useRef<HTMLInputElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const cameraStreamRef = useRef<MediaStream | null>(null);
 
   const handleScan = async (
     type: 'barcode' | 'ingredients' | 'label-image',
@@ -60,8 +75,10 @@ export default function PackagedScanPage() {
       if (token) headers['Authorization'] = `Bearer ${token}`;
       else headers['x-user-id'] = 'demo-user';
 
-      const sendBarcode = type === 'barcode' ? code : isPureDigits ? text : (code || undefined);
-      const sendText = text || undefined;
+      const sendBarcode =
+        type === 'barcode' ? code : type === 'ingredients' && isPureDigits ? text : (code || undefined);
+      // An image-only request must not reuse OCR text from a previous scan.
+      const sendText = type === 'label-image' ? undefined : text || undefined;
       const sendImage = type === 'label-image' ? imageBase64 : undefined;
 
       const res = await fetch('/api/food/packaged', {
@@ -99,8 +116,7 @@ export default function PackagedScanPage() {
     handleScan('barcode', code);
   };
 
-  const handleLabelImage = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+  const processLabelImage = async (file: File) => {
     if (!file) return;
 
     setOcrLoading(true);
@@ -108,30 +124,85 @@ export default function PackagedScanPage() {
     setAnalysis(null);
 
     try {
-      const { compressImage } = await import('@/lib/image-utils');
+      const { compressImage, prepareImageForOcr } = await import('@/lib/image-utils');
       const dataUrl = await compressImage(file);
       setLabelPreview(dataUrl);
 
       try {
         const { extractTextFromImage } = await import('@/lib/ocr-client');
-        const ocrText = await extractTextFromImage(file);
-        if (ocrText.length > 5) {
+        const ocrImage = await prepareImageForOcr(file);
+        const ocrText = await extractTextFromImage(ocrImage);
+        if (isUsableLabelOcr(ocrText)) {
           setIngredientText(ocrText);
           toast.info('Ingredients detected from label — analyzing...');
           await handleScan('ingredients', undefined, dataUrl, 'image/jpeg');
         } else {
-          toast.info('Using AI to analyze ingredient label...');
+          setIngredientText('');
+          toast.info('OCR was unclear — using the full label image for analysis...');
           await handleScan('label-image', undefined, dataUrl, 'image/jpeg');
         }
       } catch {
         await handleScan('label-image', undefined, dataUrl, 'image/jpeg');
       }
     } catch {
+      setError('Unable to read this image. Please retake the photo with the ingredient text in focus and good lighting.');
       toast.error('Failed to process image');
     } finally {
       setOcrLoading(false);
     }
   };
+
+  const handleLabelImage = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (file) await processLabelImage(file);
+  };
+
+  const stopCamera = () => {
+    cameraStreamRef.current?.getTracks().forEach((track) => track.stop());
+    cameraStreamRef.current = null;
+    setCameraOpen(false);
+  };
+
+  const openCamera = async () => {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      labelCameraRef.current?.click();
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: 'environment' } },
+        audio: false,
+      });
+      cameraStreamRef.current = stream;
+      setCameraOpen(true);
+      requestAnimationFrame(() => {
+        if (videoRef.current) videoRef.current.srcObject = stream;
+      });
+    } catch {
+      toast.error('Camera access was denied. You can upload a label image instead.');
+      labelCameraRef.current?.click();
+    }
+  };
+
+  const captureCameraImage = async () => {
+    const video = videoRef.current;
+    if (!video || video.videoWidth === 0 || video.videoHeight === 0) {
+      toast.error('Camera is still starting. Try again in a moment.');
+      return;
+    }
+    const canvas = document.createElement('canvas');
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    canvas.getContext('2d')?.drawImage(video, 0, 0);
+    stopCamera();
+    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.95));
+    if (blob) await processLabelImage(new File([blob], 'label-photo.jpg', { type: 'image/jpeg' }));
+  };
+
+  useEffect(() => () => {
+    cameraStreamRef.current?.getTracks().forEach((track) => track.stop());
+  }, []);
 
   const effectiveTargets = targets ?? (profile ? calculateTargets(profile) : null);
 
@@ -211,7 +282,7 @@ export default function PackagedScanPage() {
           <div className="grid grid-cols-2 gap-3">
             <button
               type="button"
-              onClick={() => labelCameraRef.current?.click()}
+              onClick={openCamera}
               disabled={ocrLoading || loading}
               className="flex flex-col items-center gap-2 rounded-xl border-2 border-dashed border-primary/30 p-5 transition hover:border-primary hover:bg-primary/5 disabled:opacity-50"
             >
@@ -228,6 +299,15 @@ export default function PackagedScanPage() {
               <span className="text-xs font-bold">Upload Image</span>
             </button>
           </div>
+          {cameraOpen && (
+            <div className="mt-4 space-y-3 rounded-xl border border-primary/30 bg-black p-3">
+              <video ref={videoRef} autoPlay playsInline muted className="max-h-72 w-full rounded-lg object-contain" />
+              <div className="flex gap-2">
+                <Button type="button" onClick={captureCameraImage} className="flex-1">Capture label</Button>
+                <Button type="button" onClick={stopCamera} variant="outline">Cancel</Button>
+              </div>
+            </div>
+          )}
           <input ref={labelCameraRef} type="file" accept="image/*" capture="environment" onChange={handleLabelImage} className="hidden" />
           <input ref={labelInputRef} type="file" accept="image/*" onChange={handleLabelImage} className="hidden" />
         </Card>

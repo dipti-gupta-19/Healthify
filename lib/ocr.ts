@@ -16,7 +16,14 @@ async function getWorker() {
 
 export async function extractTextFromImage(imageSource: string | File): Promise<string> {
   const worker = await getWorker();
+  await worker.setParameters({
+    preserve_interword_spaces: '1',
+    tessedit_pageseg_mode: '6',
+  });
   const { data } = await worker.recognize(imageSource);
+  if (typeof data.confidence === 'number' && data.confidence < 35) {
+    return '';
+  }
   return data.text.trim();
 }
 
