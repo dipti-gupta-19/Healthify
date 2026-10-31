@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -34,7 +34,7 @@ export function ScanAIAssistant({
     {
       id: 'init-1',
       sender: 'ai',
-      text: `Hello! I am Healthify's AI Nutrition Assistant. I see you scanned "${analysis.name}" (${analysis.facts.calories} kcal, ${analysis.facts.sugar ?? 0}g sugar). Ask me any questions about this meal, or autocorrect the food name if I guessed wrong!`,
+      text: `Hello! I am Healthify's Nutrition Assistant. I see you scanned "${analysis.name}" (${analysis.facts.calories} kcal, ${analysis.facts.sugar ?? 0}g sugar). Ask me anything specifically about "${analysis.name}" (such as healthier alternatives, ingredients, or daily fit)!`,
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     },
   ]);
@@ -43,6 +43,18 @@ export function ScanAIAssistant({
   const [showCorrectionForm, setShowCorrectionForm] = useState(false);
   const [correctedName, setCorrectedName] = useState('');
   const [correcting, setCorrecting] = useState(false);
+
+  // Sync assistant greeting whenever the scanned food item updates
+  useEffect(() => {
+    setMessages([
+      {
+        id: `init-${Date.now()}`,
+        sender: 'ai',
+        text: `Hello! I am Healthify's Nutrition Assistant. I see you scanned "${analysis.name}" (${analysis.facts.calories} kcal, ${analysis.facts.sugar ?? 0}g sugar). Ask me anything specifically about "${analysis.name}" (such as healthier alternatives, ingredients, or daily fit)!`,
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      },
+    ]);
+  }, [analysis.name]);
 
   const sendMessage = async (userText: string) => {
     if (!userText.trim()) return;
@@ -73,11 +85,20 @@ export function ScanAIAssistant({
       if (token) headers['Authorization'] = `Bearer ${token}`;
       else headers['x-user-id'] = 'demo-user';
 
+      const history = messages
+        .filter((m) => !m.isCorrection)
+        .slice(-6)
+        .map((m) => ({
+          role: m.sender === 'user' ? 'user' : 'assistant',
+          text: m.text,
+        }));
+
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers,
         body: JSON.stringify({
           message: userText,
+          history,
           foodContext: {
             name: analysis.name,
             calories: analysis.facts.calories,
@@ -86,10 +107,14 @@ export function ScanAIAssistant({
             fat: analysis.facts.fat,
             sugar: analysis.facts.sugar,
             sodium: analysis.facts.sodium,
+            fiber: analysis.facts.fiber,
             verdict: analysis.verdict,
             warnings: analysis.warnings,
             ingredients: analysis.ingredients,
             dietAlerts: analysis.dietAlerts,
+            whyLimit: analysis.whyLimit,
+            junkFoodLabel: analysis.junkFoodLabel,
+            portionAdvice: analysis.portionAdvice,
           },
           profile,
         }),
@@ -177,7 +202,7 @@ export function ScanAIAssistant({
             timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
           },
         ]);
-        toast.success(`AI re-analyzed product as "${newFoodName}"!`);
+        toast.success(`Food re-analyzed as "${newFoodName}"!`);
         setShowCorrectionForm(false);
         setCorrectedName('');
       } else {
@@ -200,13 +225,13 @@ export function ScanAIAssistant({
           </div>
           <div>
             <h3 className="font-bold text-sm sm:text-base flex items-center gap-2">
-              AI Scan Assistant
+              Nutrition Assistant
               <Badge variant="secondary" className="text-[10px] font-bold bg-primary/10 text-primary py-0">
                 Active Scan Context
               </Badge>
             </h3>
             <p className="text-xs text-muted-foreground">
-              Ask about &quot;{analysis.name}&quot; or autocorrect if AI guessed wrong
+              Ask about &quot;{analysis.name}&quot; or update food details
             </p>
           </div>
         </div>
@@ -252,10 +277,10 @@ export function ScanAIAssistant({
       {/* QUICK PROMPT CHIPS */}
       <div className="px-4 pt-3 flex flex-wrap gap-2">
         {[
-          `Is this too sugary for me?`,
-          `Is this safe for my health profile?`,
-          `What is a healthier alternative?`,
-          `How much protein in half a portion?`,
+          `What is a healthier alternative to ${analysis.name}?`,
+          `Is ${analysis.name} safe for my health profile?`,
+          `How much sugar and salt in ${analysis.name}?`,
+          `How does ${analysis.name} fit my daily budget?`,
         ].map((chip) => (
           <button
             key={chip}
@@ -305,7 +330,7 @@ export function ScanAIAssistant({
         {loading && (
           <div className="flex gap-2 items-center text-xs text-muted-foreground py-2">
             <Loader2 className="h-4 w-4 animate-spin text-primary" />
-            <span>AI Assistant is analyzing your question...</span>
+            <span>Assistant is analyzing your question...</span>
           </div>
         )}
       </div>
@@ -322,7 +347,7 @@ export function ScanAIAssistant({
           <Input
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder={`Ask AI anything about ${analysis.name}...`}
+            placeholder={`Ask anything about ${analysis.name}...`}
             className="flex-1 text-sm h-10 bg-background"
           />
           <Button type="submit" disabled={!input.trim() || loading} className="h-10 px-4 font-bold">

@@ -196,7 +196,7 @@ export function ChatWidget() {
           className="fixed bottom-24 right-4 z-50 flex w-[360px] max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl"
           style={{ animation: 'chatSlideUp 0.22s ease-out', height: '520px' }}
           role="dialog"
-          aria-label="Healthify AI Assistant"
+          aria-label="Healthify Nutrition Assistant"
         >
           {/* Header */}
           <div className="flex items-center gap-2.5 border-b border-border bg-card px-4 py-3">
@@ -205,7 +205,7 @@ export function ChatWidget() {
             </div>
             <div className="flex-1">
               <p className="text-sm font-semibold leading-tight text-foreground">
-                AI Nutrition Assistant
+                Nutrition Assistant
               </p>
               <p className="text-xs text-muted-foreground">Powered by your meal data</p>
             </div>
@@ -229,7 +229,7 @@ export function ChatWidget() {
                     <Bot className="h-3.5 w-3.5 text-primary" />
                   </div>
                   <div className="max-w-[85%] rounded-2xl rounded-tl-sm bg-muted px-3.5 py-2.5 text-sm leading-relaxed text-foreground font-medium">
-                    Hello! I am your AI Nutrition Assistant. Ask me anything about your food history, protein targets, or recovery foods for today! 🥗
+                    Hello! I am your Nutrition Assistant. Ask me anything about your food history, protein targets, or recovery foods for today! 🥗
                   </div>
                 </div>
 
@@ -314,7 +314,7 @@ export function ChatWidget() {
       <button
         id="chat-widget-fab"
         onClick={() => setOpen((o) => !o)}
-        aria-label={open ? 'Close AI chat' : 'Open AI chat assistant'}
+        aria-label={open ? 'Close chat' : 'Open chat assistant'}
         className={cn(
           'fixed bottom-4 right-4 z-50 flex h-14 w-14 items-center justify-center rounded-full shadow-lg transition-all duration-200',
           open

@@ -89,12 +89,12 @@ export function HealthCheckinBanner({
   const advice = getHealthAdvice(checkin.condition);
 
   return (
-    <Card className="p-4 sm:p-6 border-2 border-primary/30 bg-gradient-to-br from-primary/10 via-background to-secondary/30 shadow-md relative overflow-hidden space-y-4">
+    <Card className="p-4 sm:p-6 border border-border/80 bg-gradient-to-br from-primary/10 via-background to-secondary/30 shadow-sm glass-card relative overflow-hidden space-y-4">
       {/* HEADER BAR */}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <Badge variant="outline" className="gap-1 border-primary/40 text-primary font-bold text-xs px-2.5 py-0.5">
-            <Stethoscope className="h-3.5 w-3.5" /> Daily AI Health Validator
+            <Stethoscope className="h-3.5 w-3.5" /> Daily Health Check-in
           </Badge>
           {checkin.condition !== 'healthy' && (
             <Badge variant="destructive" className="text-xs font-bold px-2 py-0.5 animate-pulse">
@@ -109,7 +109,7 @@ export function HealthCheckinBanner({
           onClick={() => setShowDetails(!showDetails)}
           className="text-xs font-bold text-primary h-7 px-2"
         >
-          <span>{showDetails ? 'Hide AI Food Suggestions' : 'Show AI Food Suggestions'}</span>
+          <span>{showDetails ? 'Hide Food Suggestions' : 'Show Food Suggestions'}</span>
           {showDetails ? <ChevronUp className="h-4 w-4 ml-1" /> : <ChevronDown className="h-4 w-4 ml-1" />}
         </Button>
       </div>
@@ -120,7 +120,7 @@ export function HealthCheckinBanner({
           How are you feeling today?
         </h2>
         <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">
-          Tap your condition or type your symptoms below to get personalized AI diet recommendations.
+          Tap your condition or type your symptoms below to get personalized diet recommendations.
         </p>
       </div>
 

@@ -1,18 +1,22 @@
 import type { Part } from '@google/generative-ai';
 
-/** Vision-capable flash aliases that still accept generateContent for new AI Studio keys. */
+/** Fast, high-availability flash aliases that accept generateContent for AI Studio keys. */
 export const GEMINI_MODELS = [
+  'gemini-3.1-flash-lite',
+  'gemini-3.5-flash',
+  'gemini-3.5-flash-lite',
   'gemini-flash-lite-latest',
   'gemini-flash-latest',
-  'gemini-3.5-flash-lite',
-  'gemini-3.5-flash',
   'gemini-3.6-flash',
   'gemini-3.8-flash',
-  'gemini-3.1-flash-lite',
 ];
 
 let quotaBlockedUntil = 0;
 let cachedWorkingModel: string | null = null;
+const modelBlockedUntil = new Map<string, number>();
+const model404Set = new Set<string>();
+let cachedDiscoveredModels: string[] | null = null;
+let lastDiscoveryTime = 0;
 
 export function parseJsonFromText(text: string): Record<string, unknown> | null {
   const cleaned = text.replace(/```json\s*/g, '').replace(/```/g, '').trim();
@@ -90,6 +94,17 @@ function isQuotaError(raw: string): boolean {
     || lower.includes('exceeded your current');
 }
 
+function isOverloadError(status: number, raw: string): boolean {
+  return status === 503
+    || raw.toLowerCase().includes('unavailable')
+    || raw.toLowerCase().includes('high demand')
+    || raw.toLowerCase().includes('overloaded');
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function toUserFriendlyError(raw: string): string {
   const lower = raw.toLowerCase();
   if (raw.includes('401') || raw.includes('403') || lower.includes('permission_denied') || lower.includes('unauthenticated') || lower.includes('invalid_api_key')) {
@@ -112,7 +127,10 @@ function toUserFriendlyError(raw: string): string {
     return 'Invalid image data — re-upload the photo and try again.';
   }
   if (raw.includes('Could not parse AI response')) {
-    return 'AI responded but format was invalid — click Scan & Analyze once more.';
+    return 'Analysis response format was invalid — click Scan & Analyze once more.';
+  }
+  if (raw.includes('503') || raw.toLowerCase().includes('unavailable') || raw.toLowerCase().includes('high demand')) {
+    return 'Gemini AI is temporarily overloaded. Your product data was saved — please try again in 30 seconds.';
   }
   if (raw && raw !== 'all models failed' && raw !== 'empty AI response') {
     return `Gemini error: ${raw.slice(0, 160)}`;
@@ -121,12 +139,16 @@ function toUserFriendlyError(raw: string): string {
 }
 
 async function discoverFlashModels(apiKey: string): Promise<string[]> {
+  const now = Date.now();
+  if (cachedDiscoveredModels && now - lastDiscoveryTime < 3600_000) {
+    return cachedDiscoveredModels;
+  }
   try {
     const res = await fetch(
       'https://generativelanguage.googleapis.com/v1beta/models?pageSize=100',
-      { headers: { 'x-goog-api-key': apiKey } },
+      { headers: { 'x-goog-api-key': apiKey }, signal: AbortSignal.timeout(4000) },
     );
-    if (!res.ok) return [];
+    if (!res.ok) return cachedDiscoveredModels || [];
 
     const data = await res.json();
     const discovered = (data.models ?? [])
@@ -136,29 +158,50 @@ async function discoverFlashModels(apiKey: string): Promise<string[]> {
       .filter(isFlashModel)
       .sort((a: string, b: string) => modelPriority(a) - modelPriority(b));
 
+    cachedDiscoveredModels = discovered;
+    lastDiscoveryTime = now;
     if (process.env.NODE_ENV === 'development' && discovered.length) {
       console.log('[gemini] Available flash models:', discovered.slice(0, 6).join(', '));
     }
     return discovered;
   } catch {
-    return [];
+    return cachedDiscoveredModels || [];
   }
 }
 
 async function resolveModelCandidates(apiKey: string, preferred?: string[]): Promise<string[]> {
   const merged = new Set<string>();
-  if (cachedWorkingModel) merged.add(cachedWorkingModel);
-  for (const m of preferred ?? []) merged.add(m);
-  for (const m of GEMINI_MODELS) merged.add(m);
-  for (const m of await discoverFlashModels(apiKey)) merged.add(m);
+  const now = Date.now();
+
+  const isModelAvailable = (m: string) => !model404Set.has(m) && (modelBlockedUntil.get(m) ?? 0) <= now;
+
+  if (cachedWorkingModel && isModelAvailable(cachedWorkingModel)) {
+    merged.add(cachedWorkingModel);
+  }
+  for (const m of preferred ?? []) {
+    if (isModelAvailable(m)) merged.add(m);
+  }
+  for (const m of GEMINI_MODELS) {
+    if (isModelAvailable(m)) merged.add(m);
+  }
+  const discovered = await discoverFlashModels(apiKey);
+  for (const m of discovered) {
+    if (isModelAvailable(m)) merged.add(m);
+  }
   return [...merged];
 }
 
-/** Tries models on 404/503/empty; stops on auth errors. Vision-quota 429 still cooldowns. */
+/** Tries models on 404/503/429-per-model; stops on auth errors or when working model succeeds. */
 async function geminiGenerateParts(
   apiKey: string,
   parts: Part[],
-  options?: { jsonMode?: boolean; models?: string[] },
+  options?: {
+    jsonMode?: boolean;
+    models?: string[];
+    disableThinking?: boolean;
+    timeoutMs?: number;
+    maxOutputTokens?: number;
+  },
 ): Promise<GeminiResult> {
   if (Date.now() < quotaBlockedUntil) {
     return { error: toUserFriendlyError('429 quota cooldown active') };
@@ -167,74 +210,109 @@ async function geminiGenerateParts(
   const candidates = (await resolveModelCandidates(apiKey, options?.models))
     .filter(isFlashModel)
     .slice(0, 8);
+
   const bodyBase: Record<string, unknown> = {
     contents: [{ parts }],
   };
+
+  const genConfig: Record<string, unknown> = {};
   if (options?.jsonMode !== false) {
-    bodyBase.generationConfig = { responseMimeType: 'application/json' };
+    genConfig.responseMimeType = 'application/json';
+  }
+  if (options?.disableThinking) {
+    genConfig.thinkingConfig = { thinkingBudget: 0 };
+  }
+  if (options?.maxOutputTokens) {
+    genConfig.maxOutputTokens = options.maxOutputTokens;
+  }
+  if (Object.keys(genConfig).length > 0) {
+    bodyBase.generationConfig = genConfig;
   }
 
   let lastMeaningfulError = '';
   let notFoundCount = 0;
+  let allQuotaCount = 0;
+  const timeoutMs = options?.timeoutMs || 8000;
+  const MAX_RETRIES = 1; // 1 quick retry for transient 503 to keep response time fast
 
   for (const modelName of candidates) {
-    try {
-      const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
-          body: JSON.stringify(bodyBase),
-        },
-      );
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        const res = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
+            body: JSON.stringify(bodyBase),
+            signal: AbortSignal.timeout(timeoutMs),
+          },
+        );
 
-      if (!res.ok) {
-        const errBody = await res.text();
-        const raw = `${res.status} ${errBody.slice(0, 200)}`;
+        if (!res.ok) {
+          const errBody = await res.text();
+          const raw = `${res.status} ${errBody.slice(0, 300)}`;
 
-        if (res.status === 404) {
-          notFoundCount++;
+          if (res.status === 404) {
+            notFoundCount++;
+            model404Set.add(modelName);
+            lastMeaningfulError = raw;
+            break; // skip this model
+          }
+
+          if (res.status === 429 || isQuotaError(raw)) {
+            allQuotaCount++;
+            modelBlockedUntil.set(modelName, Date.now() + 180_000); // 3 min per-model cooldown
+            if (cachedWorkingModel === modelName) cachedWorkingModel = null;
+            lastMeaningfulError = raw;
+            if (process.env.NODE_ENV === 'development') {
+              console.warn(`[gemini] model ${modelName} 429 quota reached, quickly switching to next model`);
+            }
+            break; // failover immediately to next model!
+          }
+
+          if (res.status === 401 || res.status === 403) {
+            if (process.env.NODE_ENV === 'development') console.error('[gemini]', raw);
+            return { error: toUserFriendlyError(raw) };
+          }
+
+          // 503 UNAVAILABLE — brief retry
+          if (isOverloadError(res.status, raw)) {
+            lastMeaningfulError = raw;
+            if (attempt < MAX_RETRIES) {
+              await sleep(400);
+              continue;
+            }
+            break;
+          }
+
           lastMeaningfulError = raw;
+          if (process.env.NODE_ENV === 'development') console.error('[gemini]', raw);
+          break;
+        }
+
+        const data = await res.json();
+        const text = extractCandidateText(data);
+        if (text) {
+          cachedWorkingModel = modelName;
+          return { text, model: modelName };
+        }
+
+        const blockReason = data?.promptFeedback?.blockReason || data?.candidates?.[0]?.finishReason || '';
+        lastMeaningfulError = blockReason ? `blocked: ${blockReason}` : 'empty AI response';
+        break;
+      } catch (e) {
+        lastMeaningfulError = e instanceof Error ? e.message : 'Network error';
+        if (attempt < MAX_RETRIES) {
+          await sleep(300);
           continue;
         }
-
-        lastMeaningfulError = raw;
-
-        if (res.status === 429 || isQuotaError(raw)) {
-          quotaBlockedUntil = Date.now() + 120_000;
-          if (process.env.NODE_ENV === 'development') {
-            console.error('[gemini] quota exceeded — cooldown 2 min, model:', modelName);
-          }
-          return { error: toUserFriendlyError(raw) };
-        }
-
-        if (res.status === 401 || res.status === 403) {
-          if (process.env.NODE_ENV === 'development') console.error('[gemini]', raw);
-          return { error: toUserFriendlyError(raw) };
-        }
-
-        if (process.env.NODE_ENV === 'development') console.error('[gemini]', raw);
-        continue;
+        break;
       }
-
-      const data = await res.json();
-      const text = extractCandidateText(data);
-      if (text) {
-        cachedWorkingModel = modelName;
-        return { text, model: modelName };
-      }
-
-      const blockReason = data?.promptFeedback?.blockReason || data?.candidates?.[0]?.finishReason || '';
-      lastMeaningfulError = blockReason ? `blocked: ${blockReason}` : 'empty AI response';
-      if (process.env.NODE_ENV === 'development') {
-        console.error('[gemini] empty/blocked on', modelName, lastMeaningfulError);
-      }
-      continue;
-    } catch (e) {
-      lastMeaningfulError = e instanceof Error ? e.message : 'Network error';
-      if (process.env.NODE_ENV === 'development') console.error('[gemini]', lastMeaningfulError);
-      continue;
     }
+  }
+
+  if (allQuotaCount > 0 && allQuotaCount >= candidates.length) {
+    quotaBlockedUntil = Date.now() + 60_000;
   }
 
   if (notFoundCount > 0 && notFoundCount >= candidates.length) {
@@ -309,11 +387,26 @@ export function getGeminiKeyHint(): string {
 }
 
 /**
- * Lightweight plain-text Gemini call — no JSON schema, low token budget.
+ * Lightweight plain-text Gemini call — no JSON schema, low token budget, instant response.
  * Used by the chat assistant route to get conversational answers fast.
  */
-export async function geminiTextPlain(prompt: string): Promise<GeminiResult> {
+export async function geminiTextPlain(prompt: string, preferredModels?: string[]): Promise<GeminiResult> {
   const apiKey = getApiKey();
   if (!apiKey) return { error: 'GEMINI_API_KEY not set' };
-  return geminiGenerateParts(apiKey, [{ text: prompt }], { jsonMode: false });
+  return geminiGenerateParts(apiKey, [{ text: prompt }], {
+    jsonMode: false,
+    disableThinking: true,
+    timeoutMs: 6500,
+    maxOutputTokens: 400,
+    models: preferredModels || [
+      'gemini-3.1-flash-lite',
+      'gemini-3.5-flash',
+      'gemini-3.5-flash-lite',
+      'gemini-flash-lite-latest',
+      'gemini-flash-latest',
+      'gemini-3.6-flash',
+      'gemini-3.8-flash',
+    ],
+  });
 }
+

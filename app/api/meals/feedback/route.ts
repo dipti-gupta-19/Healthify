@@ -13,6 +13,24 @@ export async function POST(req: Request) {
     const userId = session?.userId || req.headers.get('x-user-id') || 'demo-user';
     const body = await req.json();
 
+    if (!process.env.MONGODB_URI) {
+      if (body.scanCorrection) {
+        return NextResponse.json({ ok: true });
+      }
+      const feedback = {
+        symptoms: body.symptoms || [],
+        severity: body.severity || 'mild',
+        notes: body.notes,
+        liked: body.liked ?? true,
+        recordedAt: new Date().toISOString(),
+      };
+      return NextResponse.json({
+        ok: true,
+        feedback,
+        message: 'Feedback recorded locally.',
+      });
+    }
+
     const db = await getDb();
 
     // Handle AI Scan Autocorrect feedback logging

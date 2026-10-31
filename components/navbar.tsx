@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation';
 import { useProfile } from '@/components/profile-context';
 import { AuthModal } from '@/components/auth-modal';
 import { NotificationsDrawer, type AINotification } from '@/components/notifications-drawer';
+import { ThemeToggle } from '@/components/theme-toggle';
 import { Leaf, Camera, ClipboardList, LayoutDashboard, UserCircle, Menu, LogIn, LogOut, User, X } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { cn } from '@/lib/utils';
@@ -46,10 +47,14 @@ export function Navbar() {
     setAuthModalOpen(true);
   };
 
-  useEffect(() => {
+  const refreshNotifications = () => {
     const meals = readLocalMeals();
     const live = generateLiveNotifications(meals, targets, profile);
     setNotifications(live);
+  };
+
+  useEffect(() => {
+    refreshNotifications();
   }, [profile, targets, pathname]);
 
   return (
@@ -85,9 +90,12 @@ export function Navbar() {
           })}
         </div>
 
-        <div className="hidden md:flex items-center gap-3">
-          {/* AI Notifications Drawer Widget */}
-          <NotificationsDrawer notifications={notifications} />
+        <div className="hidden md:flex items-center gap-2.5">
+          {/* Notifications Drawer Widget */}
+          <NotificationsDrawer notifications={notifications} onMarkAllRead={refreshNotifications} />
+
+          {/* Theme Toggle Button */}
+          <ThemeToggle />
 
           {user || profile ? (
             <DropdownMenu>
@@ -99,26 +107,26 @@ export function Navbar() {
                   <span className="font-bold text-sm">{user?.name || profile?.name || 'User'}</span>
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-60 rounded-xl p-2 shadow-xl border-2 border-primary/20">
+              <DropdownMenuContent align="end" className="w-60 rounded-xl p-2 shadow-xl border border-border/80">
                 <DropdownMenuLabel className="font-normal px-3 py-2">
                   <div className="flex flex-col space-y-1">
                     <p className="text-sm font-bold leading-none">{user?.name || profile?.name || 'User'}</p>
-                    <p className="text-xs leading-none text-muted-foreground truncate">{user?.email || 'MongoDB Synced'}</p>
+                    <p className="text-xs leading-none text-muted-foreground truncate">{user?.email || 'Logged in'}</p>
                   </div>
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem asChild>
-                  <Link href="/profile" className="cursor-pointer flex items-center gap-2 text-sm font-semibold p-2">
+                  <Link href="/profile" className="cursor-pointer flex items-center gap-2 text-sm font-semibold p-2 rounded-lg">
                     <User className="h-4 w-4 text-primary" /> Profile Settings
                   </Link>
                 </DropdownMenuItem>
                 <DropdownMenuItem asChild>
-                  <Link href="/dashboard" className="cursor-pointer flex items-center gap-2 text-sm font-semibold p-2">
+                  <Link href="/dashboard" className="cursor-pointer flex items-center gap-2 text-sm font-semibold p-2 rounded-lg">
                     <LayoutDashboard className="h-4 w-4 text-primary" /> Health Dashboard
                   </Link>
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={logoutUser} className="cursor-pointer text-destructive focus:text-destructive flex items-center gap-2 text-sm font-semibold p-2">
+                <DropdownMenuItem onClick={logoutUser} className="cursor-pointer text-destructive focus:text-destructive flex items-center gap-2 text-sm font-semibold p-2 rounded-lg">
                   <LogOut className="h-4 w-4" /> Sign Out
                 </DropdownMenuItem>
               </DropdownMenuContent>
@@ -135,15 +143,17 @@ export function Navbar() {
           )}
         </div>
 
-        {/* Mobile menu trigger */}
+        {/* Mobile action bar with Theme Toggle, Notifications, and Hamburger */}
         <div className="flex items-center gap-2 md:hidden">
-          <NotificationsDrawer notifications={notifications} />
+          <ThemeToggle />
+          <NotificationsDrawer notifications={notifications} onMarkAllRead={refreshNotifications} />
           <button
-            className="rounded-xl p-2.5 text-foreground hover:bg-muted border border-border"
+            className="rounded-xl p-2.5 text-foreground hover:bg-muted border border-border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
             onClick={() => setOpen(!open)}
-            aria-label="Menu"
+            aria-label="Toggle navigation menu"
+            aria-expanded={open}
           >
-            {open ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
+            {open ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
           </button>
         </div>
       </nav>

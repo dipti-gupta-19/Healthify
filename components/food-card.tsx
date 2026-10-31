@@ -205,7 +205,7 @@ export function FoodCard({
   };
 
   return (
-    <Card className={`overflow-hidden border-2 ${verdict.border}`}>
+    <Card className={`overflow-hidden border-2 glass-card shadow-sm ${verdict.border}`}>
       {/* Header */}
       <div className={`flex items-center gap-3 p-4 ${verdict.bg}`}>
         <span className="text-4xl">{analysis.emoji}</span>
@@ -459,9 +459,19 @@ export function FoodCard({
                   </button>
                 ))}
               </div>
+              <div className="space-y-1">
+                <p className="text-xs text-muted-foreground">Any notes? (optional)</p>
+                <textarea
+                  value={feedbackNotes}
+                  onChange={(e) => setFeedbackNotes(e.target.value)}
+                  placeholder="e.g. felt heavy, loved the taste, stomach upset after 1 hour..."
+                  rows={2}
+                  className="w-full rounded-lg border border-border bg-background px-3 py-2 text-xs resize-none focus:outline-none focus:ring-1 focus:ring-primary/50 placeholder:text-muted-foreground"
+                />
+              </div>
               <div className="flex gap-2">
                 <Button onClick={submitFeedback} disabled={submittingFeedback} className="flex-1">
-                  {submittingFeedback ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Submit'}
+                  {submittingFeedback ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Submit Feedback'}
                 </Button>
                 <Button variant="outline" onClick={() => { setShowFeedback(false); onLogged?.(); }}>Skip</Button>
               </div>

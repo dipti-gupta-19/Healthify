@@ -36,6 +36,7 @@ import { MealTimeNotifier } from '@/components/meal-time-notifier';
 import { DashboardCalendar } from '@/components/dashboard-calendar';
 import { HealthCheckinBanner } from '@/components/health-checkin-banner';
 import { MonthlyNutritionTimeline } from '@/components/monthly-nutrition-timeline';
+import { FeedbackRecommendationsCard } from '@/components/feedback-recommendations-card';
 import { toast } from 'sonner';
 import { mealId, mergeMeals, readLocalMeals, removeLocalMeal, writeLocalMeals } from '@/lib/meal-history';
 import { getStoredHealthCheckin, getHealthAdvice, HealthCondition } from '@/lib/health-checkin';
@@ -195,17 +196,17 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="mx-auto max-w-7xl px-4 sm:px-8 py-8 animate-fade-in space-y-6">
+    <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-6 sm:py-8 animate-fade-in space-y-6">
       <MealTimeNotifier consumedCalories={consumed.calories} />
 
       {/* TOP HEADER BAR */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-foreground flex items-center gap-2">
-            <span>Nutrition & AI Health Dashboard</span>
-            <Sparkles className="h-6 w-6 text-primary animate-pulse" />
+            <span>Nutrition & Health Dashboard</span>
+            <Sparkles className="h-5 w-5 text-primary" />
           </h1>
-          <p className="text-sm text-muted-foreground mt-0.5">
+          <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">
             {isSelectedToday ? 'Showing stats for Today — ' : 'Selected Date: '}
             <span className="font-bold text-primary">
               {selectedDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
@@ -216,16 +217,16 @@ export default function DashboardPage() {
         <div className="flex items-center gap-2">
           {user ? (
             <Badge variant="outline" className="text-xs font-bold border-primary/40 text-primary px-3 py-1">
-              Logged in: {user.name} (Database Synced)
+              Logged in: {user.name}
             </Badge>
           ) : (
             <Button
               variant="outline"
               size="sm"
               onClick={() => setAuthModalOpen(true)}
-              className="gap-1.5 text-xs font-bold border-amber-500/40 text-amber-600 dark:text-amber-400"
+              className="gap-1.5 text-xs font-bold border-primary/30 text-primary hover:bg-primary/5"
             >
-              <Lock className="h-3.5 w-3.5" /> Sign in to sync MongoDB
+              <Lock className="h-3.5 w-3.5" /> Sign in to sync
             </Button>
           )}
         </div>
@@ -239,23 +240,23 @@ export default function DashboardPage() {
         targetCalories={targets?.calories}
       />
 
-      {/* MAIN TABBED NAVIGATION - FIRST TAB IS LIVE BUDGET & AI INSIGHTS */}
+      {/* MAIN TABBED NAVIGATION - FIRST TAB IS LIVE BUDGET & DAILY INSIGHTS */}
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)} className="w-full">
-        <div className="flex items-center justify-between mb-4 border-b border-border/60 pb-3">
-          <TabsList className="bg-muted/60 p-1 rounded-xl">
-            <TabsTrigger value="ai-overview" className="text-xs sm:text-sm font-bold px-4 py-2 rounded-lg gap-2">
-              <Sparkles className="h-4 w-4 text-primary" /> Live Budget & AI Insights
+        <div className="flex items-center justify-between mb-4 border-b border-border/60 pb-3 overflow-x-auto no-scrollbar">
+          <TabsList className="bg-muted/70 p-1 rounded-xl w-full sm:w-auto overflow-x-auto no-scrollbar flex items-center justify-start gap-1">
+            <TabsTrigger value="ai-overview" className="text-xs sm:text-sm font-bold px-3.5 sm:px-4 py-2 rounded-lg gap-2 whitespace-nowrap shrink-0">
+              <Sparkles className="h-4 w-4 text-primary" /> Live Budget & Insights
             </TabsTrigger>
-            <TabsTrigger value="monthly" className="text-xs sm:text-sm font-bold px-4 py-2 rounded-lg gap-2">
-              <PieChart className="h-4 w-4 text-emerald-500" /> Monthly Timeline & Fitness
+            <TabsTrigger value="monthly" className="text-xs sm:text-sm font-bold px-3.5 sm:px-4 py-2 rounded-lg gap-2 whitespace-nowrap shrink-0">
+              <PieChart className="h-4 w-4 text-emerald-500" /> Monthly Timeline
             </TabsTrigger>
-            <TabsTrigger value="history" className="text-xs sm:text-sm font-bold px-4 py-2 rounded-lg gap-2">
-              <History className="h-4 w-4 text-sky-500" /> Food History Log ({selectedDayMeals.length})
+            <TabsTrigger value="history" className="text-xs sm:text-sm font-bold px-3.5 sm:px-4 py-2 rounded-lg gap-2 whitespace-nowrap shrink-0">
+              <History className="h-4 w-4 text-sky-500" /> Food History ({selectedDayMeals.length})
             </TabsTrigger>
           </TabsList>
         </div>
 
-        {/* TAB 1: AI OVERVIEW & LIVE BUDGET (SHOWN ON FIRST PAGE) */}
+        {/* TAB 1: OVERVIEW & LIVE BUDGET (SHOWN ON FIRST PAGE) */}
         <TabsContent value="ai-overview" className="mt-0 space-y-6">
           {/* LIVE BUDGET CARD & SUMMARY */}
           <div className="grid lg:grid-cols-3 gap-6">
@@ -410,6 +411,15 @@ export default function DashboardPage() {
 
             </Card>
           </div>
+
+          {/* FEEDBACK-DRIVEN RECOMMENDATIONS */}
+          {profile && targets && (
+            <FeedbackRecommendationsCard
+              meals={meals}
+              profile={profile}
+              targets={targets}
+            />
+          )}
         </TabsContent>
 
         {/* TAB 2: MONTHLY NUTRITION TIMELINE & FITNESS VALIDATION */}

@@ -13,6 +13,30 @@ export async function POST(req: Request) {
     }
 
     const cleanEmail = email.toLowerCase().trim();
+
+    if (!process.env.MONGODB_URI) {
+      if (cleanEmail === 'demo@healthify.com' && password === 'password123') {
+        const token = createToken('demo-user', cleanEmail);
+        const res = NextResponse.json({
+          ok: true,
+          user: { userId: 'demo-user', email: 'demo@healthify.com', name: 'Demo User' },
+          profile: null,
+          token,
+        });
+        res.cookies.set('healthify_token', token, {
+          httpOnly: false,
+          secure: process.env.NODE_ENV === 'production',
+          sameSite: 'lax',
+          maxAge: 7 * 24 * 60 * 60,
+          path: '/',
+        });
+        return res;
+      }
+      return NextResponse.json({
+        error: 'MongoDB is not configured. Add MONGODB_URI to your .env.local file, or use the Demo Account to sign in.',
+      }, { status: 400 });
+    }
+
     const db = await getDb();
 
     const user = await db.collection('users').findOne({ email: cleanEmail });

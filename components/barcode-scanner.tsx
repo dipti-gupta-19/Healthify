@@ -15,6 +15,18 @@ export function BarcodeScanner({ onDetected }: { onDetected: (code: string) => v
 
   const startScan = async () => {
     setStarting(true);
+
+    // navigator.mediaDevices is only available in secure contexts (HTTPS / localhost).
+    // On plain HTTP it is undefined, which causes the cryptic "Cannot read properties
+    // of undefined (reading 'getUserMedia')" error seen in the screenshot.
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      toast.error(
+        'Camera access requires a secure connection (HTTPS). Please open the app over HTTPS or use manual barcode entry below.',
+      );
+      setStarting(false);
+      return;
+    }
+
     try {
       const hints = new Map();
       hints.set(DecodeHintType.POSSIBLE_FORMATS, [

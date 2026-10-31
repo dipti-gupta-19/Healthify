@@ -207,11 +207,11 @@ export default function PackagedScanPage() {
   const effectiveTargets = targets ?? (profile ? calculateTargets(profile) : null);
 
   return (
-    <div className="mx-auto max-w-7xl px-4 sm:px-8 py-8 animate-fade-in">
+    <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-6 sm:py-8 animate-fade-in">
       {/* HEADER HERO */}
       <div className="mb-8">
-        <div className="flex items-center gap-3 mb-2">
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-md">
+        <div className="flex items-center gap-3.5 mb-2">
+          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-md shrink-0">
             <ClipboardList className="h-6 w-6" />
           </div>
           <div>
@@ -226,7 +226,7 @@ export default function PackagedScanPage() {
       {/* SCAN OPTIONS GRID */}
       <div className="grid md:grid-cols-2 gap-6 mb-8">
         {/* OPTION 1: BARCODE & QR CODE CAMERA SCAN */}
-        <Card className="p-6 border-primary/20 shadow-sm glass-card">
+        <Card className="p-6 border border-border/80 shadow-sm glass-card card-interactive">
           <div className="flex items-center gap-2 mb-3">
             <Camera className="h-5 w-5 text-primary" />
             <h2 className="text-base font-bold">Option 1: Camera Barcode & QR Code Scanner</h2>
@@ -237,42 +237,44 @@ export default function PackagedScanPage() {
           <BarcodeScanner onDetected={handleBarcodeDetected} />
         </Card>
 
-        {/* OPTION 2: MANUAL BARCODE / QR CODE */}
-        <Card className="p-6 border-primary/20 shadow-sm glass-card">
-          <div className="flex items-center gap-2 mb-3">
-            <Barcode className="h-5 w-5 text-primary" />
-            <h2 className="text-base font-bold">Option 2: Enter Barcode or QR Code Manually</h2>
+        {/* OPTION 2: MANUAL BARCODE OR PRODUCT NAME */}
+        <Card className="p-6 border border-border/80 shadow-sm glass-card card-interactive flex flex-col justify-between">
+          <div>
+            <div className="flex items-center gap-2 mb-3">
+              <Barcode className="h-5 w-5 text-primary" />
+              <h2 className="text-base font-bold">Option 2: Enter Barcode Number or Product Name</h2>
+            </div>
+            <p className="text-sm text-muted-foreground mb-4">
+              Enter the package barcode numbers (e.g. 8901491001168) or product name (e.g. Kurkure Masala Munch).
+            </p>
           </div>
-          <p className="text-sm text-muted-foreground mb-4">
-            Type the code numbers or QR content to look up product nutrition facts from Open Food Facts & AI.
-          </p>
-          <div className="flex flex-col sm:flex-row gap-3">
+          <div className="flex flex-col sm:flex-row gap-3 pt-2">
             <Input
               value={barcode}
               onChange={(e) => setBarcode(e.target.value)}
-              placeholder="e.g. 3017620422003 or 048500001028"
+              placeholder="e.g. 8901491001168 or Kurkure Masala Munch"
               onKeyDown={(e) => e.key === 'Enter' && barcode && handleScan('barcode')}
               className="flex-1 text-sm h-11"
             />
             <Button
               onClick={() => handleScan('barcode')}
               disabled={!barcode || loading}
-              className="gap-2 h-11 px-5 text-sm font-bold"
+              className="gap-2 h-11 px-5 text-sm font-bold shrink-0"
             >
               {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <ScanLine className="h-4 w-4" />}
-              Scan Code
+              Lookup Product
             </Button>
           </div>
         </Card>
 
         {/* OPTION 3: OCR LABEL IMAGE */}
-        <Card className="p-6 border-primary/20 shadow-sm glass-card">
+        <Card className="p-6 border border-border/80 shadow-sm glass-card card-interactive">
           <div className="flex items-center gap-2 mb-3">
             <Upload className="h-5 w-5 text-primary" />
             <h2 className="text-base font-bold">Option 3: Photo of Ingredient Label (OCR)</h2>
           </div>
           <p className="text-sm text-muted-foreground mb-4">
-            Photograph the ingredient list on packaging. AI reads ingredients and flags artificial dyes & preservatives.
+            Photograph the ingredient list on packaging to detect artificial dyes, allergens, and preservatives.
           </p>
           {labelPreview && (
             <div className="mb-4 rounded-xl overflow-hidden border border-border max-h-56">
@@ -284,7 +286,7 @@ export default function PackagedScanPage() {
               type="button"
               onClick={openCamera}
               disabled={ocrLoading || loading}
-              className="flex flex-col items-center gap-2 rounded-xl border-2 border-dashed border-primary/30 p-5 transition hover:border-primary hover:bg-primary/5 disabled:opacity-50"
+              className="flex flex-col items-center gap-2 rounded-xl border-2 border-dashed border-primary/30 p-5 transition hover:border-primary hover:bg-primary/5 active:scale-98 disabled:opacity-50"
             >
               {ocrLoading ? <Loader2 className="h-7 w-7 text-primary animate-spin" /> : <Camera className="h-7 w-7 text-primary" />}
               <span className="text-xs font-bold">Take Label Photo</span>
@@ -293,7 +295,7 @@ export default function PackagedScanPage() {
               type="button"
               onClick={() => labelInputRef.current?.click()}
               disabled={ocrLoading || loading}
-              className="flex flex-col items-center gap-2 rounded-xl border-2 border-dashed border-primary/30 p-5 transition hover:border-primary hover:bg-primary/5 disabled:opacity-50"
+              className="flex flex-col items-center gap-2 rounded-xl border-2 border-dashed border-primary/30 p-5 transition hover:border-primary hover:bg-primary/5 active:scale-98 disabled:opacity-50"
             >
               {ocrLoading ? <Loader2 className="h-7 w-7 text-primary animate-spin" /> : <Upload className="h-7 w-7 text-primary" />}
               <span className="text-xs font-bold">Upload Image</span>
@@ -313,23 +315,25 @@ export default function PackagedScanPage() {
         </Card>
 
         {/* OPTION 4: PASTE INGREDIENTS */}
-        <Card className="p-6 border-primary/20 shadow-sm glass-card">
-          <div className="flex items-center gap-2 mb-3">
-            <ClipboardList className="h-5 w-5 text-primary" />
-            <h2 className="text-base font-bold">Option 4: Paste Ingredient List</h2>
+        <Card className="p-6 border border-border/80 shadow-sm glass-card card-interactive flex flex-col justify-between">
+          <div>
+            <div className="flex items-center gap-2 mb-3">
+              <ClipboardList className="h-5 w-5 text-primary" />
+              <h2 className="text-base font-bold">Option 4: Paste Ingredient List</h2>
+            </div>
+            <p className="text-sm text-muted-foreground mb-4">
+              Copy & paste the ingredient text directly to evaluate harmful additives, trans fats, and allergens.
+            </p>
+            <Label htmlFor="ingredients" className="sr-only">Ingredients</Label>
+            <Textarea
+              id="ingredients"
+              value={ingredientText}
+              onChange={(e) => setIngredientText(e.target.value)}
+              placeholder="e.g. Wheat flour, sugar, palm oil, cocoa powder, sodium bicarbonate, artificial flavor (vanillin), soy lecithin..."
+              rows={4}
+              className="mb-3 text-sm p-3"
+            />
           </div>
-          <p className="text-sm text-muted-foreground mb-4">
-            Copy & paste the ingredient text directly to evaluate harmful additives, trans fats, and allergens.
-          </p>
-          <Label htmlFor="ingredients" className="sr-only">Ingredients</Label>
-          <Textarea
-            id="ingredients"
-            value={ingredientText}
-            onChange={(e) => setIngredientText(e.target.value)}
-            placeholder="e.g. Wheat flour, sugar, palm oil, cocoa powder, sodium bicarbonate, artificial flavor (vanillin), soy lecithin..."
-            rows={4}
-            className="mb-3 text-sm p-3"
-          />
           <Button
             onClick={() => handleScan('ingredients')}
             disabled={!ingredientText || loading}
@@ -346,7 +350,7 @@ export default function PackagedScanPage() {
         <Card className="p-8 text-center border-primary/30 bg-primary/5 animate-fade-in mb-8">
           <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto mb-3" />
           <p className="text-base font-bold text-foreground">
-            {ocrLoading ? 'Reading label text with AI...' : 'Analyzing food ingredients...'}
+            {ocrLoading ? 'Extracting label text...' : 'Analyzing food ingredients...'}
           </p>
           <p className="text-sm text-muted-foreground mt-1">Evaluating additives, allergens, and profile safety ratings.</p>
         </Card>

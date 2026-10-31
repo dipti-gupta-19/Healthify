@@ -10,7 +10,7 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: 'Healthify — AI Nutrition Assistant',
+  title: 'Healthify — Personalized Nutrition & Food Scanner',
   description: 'Identify food, get a personalized health verdict, and track your daily nutrition.',
   viewport: 'width=device-width, initial-scale=1, maximum-scale=1',
   themeColor: '#2d9f6f',
@@ -22,7 +22,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <body className={inter.className}>
         <AppProviders>{children}</AppProviders>
       </body>

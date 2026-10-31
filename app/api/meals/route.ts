@@ -15,6 +15,9 @@ export async function GET(req: Request) {
   try {
     const session = await getUserFromRequest(req);
     const userId = session?.userId || req.headers.get('x-user-id') || 'demo-user';
+    if (!process.env.MONGODB_URI) {
+      return NextResponse.json({ meals: [] });
+    }
     const db = await getDb();
     const meals = await db
       .collection('meals')
@@ -33,7 +36,6 @@ export async function POST(req: Request) {
     const session = await getUserFromRequest(req);
     const userId = session?.userId || req.headers.get('x-user-id') || 'demo-user';
     const body = await req.json();
-    const db = await getDb();
     const mealType = body.mealType || getMealType(new Date().getHours());
     const meal: LoggedMeal = {
       userId,
@@ -51,6 +53,11 @@ export async function POST(req: Request) {
       isJunkFood: body.isJunkFood || false,
       portionAdvice: body.portionAdvice || undefined,
     };
+    if (!process.env.MONGODB_URI) {
+      const mockId = `local_${Date.now()}`;
+      return NextResponse.json({ ok: true, _id: mockId, meal: { ...meal, _id: mockId } });
+    }
+    const db = await getDb();
     const result = await db.collection('meals').insertOne(meal as any);
     return NextResponse.json({ ok: true, _id: result.insertedId.toString(), meal: serializeMeal({ ...meal, _id: result.insertedId } as Record<string, unknown>) });
   } catch (err) {
@@ -66,6 +73,9 @@ export async function DELETE(req: Request) {
     const { searchParams } = new URL(req.url);
     const mealId = searchParams.get('id');
     if (!mealId) return NextResponse.json({ error: 'id required' }, { status: 400 });
+    if (!process.env.MONGODB_URI) {
+      return NextResponse.json({ ok: true });
+    }
     if (!ObjectId.isValid(mealId)) return NextResponse.json({ ok: true });
     const db = await getDb();
     await db.collection('meals').deleteOne({ _id: new ObjectId(mealId), userId });

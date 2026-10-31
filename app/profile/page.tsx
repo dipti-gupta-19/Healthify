@@ -139,17 +139,17 @@ export default function ProfilePage() {
   }
 
   return (
-    <div className="mx-auto max-w-7xl px-4 sm:px-8 py-8 animate-fade-in space-y-8">
+    <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-6 sm:py-8 animate-fade-in space-y-8">
       {/* PROFESSIONAL ACCOUNT HERO CARD */}
-      <Card className="p-6 sm:p-8 border-2 border-primary/20 bg-gradient-to-r from-primary/10 via-background to-secondary/30 shadow-md relative overflow-hidden">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
-          <div className="flex items-center gap-5">
-            <div className="h-20 w-20 rounded-2xl bg-gradient-to-tr from-primary via-teal-500 to-emerald-400 flex items-center justify-center text-primary-foreground text-3xl font-black shadow-lg">
+      <Card className="p-6 sm:p-8 border border-border/80 bg-gradient-to-r from-primary/10 via-background to-secondary/30 shadow-md relative overflow-hidden glass-card">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 sm:gap-5">
+            <div className="h-16 w-16 sm:h-20 sm:w-20 rounded-2xl bg-gradient-to-tr from-primary via-teal-500 to-emerald-400 flex items-center justify-center text-primary-foreground text-2xl sm:text-3xl font-black shadow-lg shrink-0">
               {(currentProfile.name || user?.name || 'U').charAt(0).toUpperCase()}
             </div>
             <div className="space-y-1">
-              <div className="flex items-center gap-2.5">
-                <h1 className="text-2xl sm:text-3xl font-extrabold text-foreground">
+              <div className="flex flex-wrap items-center gap-2.5">
+                <h1 className="text-2xl sm:text-3xl font-extrabold text-foreground tracking-tight">
                   {currentProfile.name || user?.name || 'Personal Health Profile'}
                 </h1>
                 {user ? (
@@ -163,7 +163,7 @@ export default function ProfilePage() {
                 )}
               </div>
 
-              <div className="flex flex-wrap items-center gap-4 text-xs sm:text-sm text-muted-foreground pt-0.5">
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs sm:text-sm text-muted-foreground pt-0.5">
                 {user?.email && (
                   <span className="flex items-center gap-1.5 font-medium text-foreground">
                     <Mail className="h-3.5 w-3.5 text-primary" /> {user.email}
@@ -179,7 +179,7 @@ export default function ProfilePage() {
             </div>
           </div>
 
-          <div className="flex items-center gap-3 shrink-0">
+          <div className="flex flex-wrap sm:flex-nowrap items-center gap-2.5 shrink-0">
             {user ? (
               <Button variant="outline" onClick={logoutUser} className="gap-2 text-xs font-bold text-destructive hover:bg-destructive/10 border-destructive/30 h-10 px-4">
                 <LogOut className="h-4 w-4" /> Sign Out
@@ -212,48 +212,48 @@ export default function ProfilePage() {
       {!isEditing ? (
         <div className="space-y-6">
           {/* BIOMETRICS GRID */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-            <Card className="p-5 flex items-center gap-4 glass-card border-border/80">
-              <div className="p-3 rounded-2xl bg-primary/10 text-primary">
-                <User className="h-6 w-6" />
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
+            <Card className="p-4 sm:p-5 flex items-center gap-3 sm:gap-4 glass-card card-interactive border-border/80">
+              <div className="p-2.5 sm:p-3 rounded-2xl bg-primary/10 text-primary shrink-0">
+                <User className="h-5 w-5 sm:h-6 sm:w-6" />
               </div>
-              <div>
-                <p className="text-xs font-semibold text-muted-foreground">Age & Sex</p>
-                <p className="text-base sm:text-lg font-bold capitalize text-foreground">
+              <div className="min-w-0">
+                <p className="text-[11px] sm:text-xs font-semibold text-muted-foreground truncate">Age & Sex</p>
+                <p className="text-sm sm:text-base font-bold capitalize text-foreground truncate">
                   {currentProfile.age} yrs, {currentProfile.sex}
                 </p>
               </div>
             </Card>
 
-            <Card className="p-5 flex items-center gap-4 glass-card border-border/80">
-              <div className="p-3 rounded-2xl bg-primary/10 text-primary">
-                <Scale className="h-6 w-6" />
+            <Card className="p-4 sm:p-5 flex items-center gap-3 sm:gap-4 glass-card card-interactive border-border/80">
+              <div className="p-2.5 sm:p-3 rounded-2xl bg-primary/10 text-primary shrink-0">
+                <Scale className="h-5 w-5 sm:h-6 sm:w-6" />
               </div>
-              <div>
-                <p className="text-xs font-semibold text-muted-foreground">Weight</p>
-                <p className="text-base sm:text-lg font-bold text-foreground">{currentProfile.weightKg} kg</p>
-              </div>
-            </Card>
-
-            <Card className="p-5 flex items-center gap-4 glass-card border-border/80">
-              <div className="p-3 rounded-2xl bg-primary/10 text-primary">
-                <Ruler className="h-6 w-6" />
-              </div>
-              <div>
-                <p className="text-xs font-semibold text-muted-foreground">Height</p>
-                <p className="text-base sm:text-lg font-bold text-foreground">{currentProfile.heightCm} cm</p>
+              <div className="min-w-0">
+                <p className="text-[11px] sm:text-xs font-semibold text-muted-foreground truncate">Weight</p>
+                <p className="text-sm sm:text-base font-bold text-foreground truncate">{currentProfile.weightKg} kg</p>
               </div>
             </Card>
 
-            <Card className="p-5 flex items-center gap-4 glass-card border-border/80">
-              <div className="p-3 rounded-2xl bg-primary/10 text-primary">
-                <Activity className="h-6 w-6" />
+            <Card className="p-4 sm:p-5 flex items-center gap-3 sm:gap-4 glass-card card-interactive border-border/80">
+              <div className="p-2.5 sm:p-3 rounded-2xl bg-primary/10 text-primary shrink-0">
+                <Ruler className="h-5 w-5 sm:h-6 sm:w-6" />
               </div>
-              <div>
-                <p className="text-xs font-semibold text-muted-foreground">BMI Rating</p>
-                <div className="flex items-center gap-2 mt-0.5">
-                  <span className="text-base sm:text-lg font-bold text-foreground">{bmi}</span>
-                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold border ${bmiCat.color}`}>
+              <div className="min-w-0">
+                <p className="text-[11px] sm:text-xs font-semibold text-muted-foreground truncate">Height</p>
+                <p className="text-sm sm:text-base font-bold text-foreground truncate">{currentProfile.heightCm} cm</p>
+              </div>
+            </Card>
+
+            <Card className="p-4 sm:p-5 flex items-center gap-3 sm:gap-4 glass-card card-interactive border-border/80">
+              <div className="p-2.5 sm:p-3 rounded-2xl bg-primary/10 text-primary shrink-0">
+                <Activity className="h-5 w-5 sm:h-6 sm:w-6" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-[11px] sm:text-xs font-semibold text-muted-foreground truncate">BMI Rating</p>
+                <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
+                  <span className="text-sm sm:text-base font-bold text-foreground">{bmi}</span>
+                  <span className={`text-[10px] px-1.5 sm:px-2 py-0.5 rounded-full font-bold border ${bmiCat.color}`}>
                     {bmiCat.label}
                   </span>
                 </div>
